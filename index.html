@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tile Planner</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1C1B1A">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1>🟦 Tile Planner</h1>
+  <span class="step-tag mono" id="stepTag">1 / 5</span>
+</header>
+
+<main>
+
+  <!-- STEP 1: Foto da parede -->
+  <section class="screen active" id="screen-wall">
+    <div class="title-block">
+      <span class="eyebrow">Passo 1</span>
+      <h2>Foto do banheiro</h2>
+      <p>Tire uma foto da parede que vai receber o revestimento. Tente pegar a parede inteira, de frente.</p>
+    </div>
+    <div class="photo-slot" id="wallSlot" tabindex="0">
+      <div class="placeholder"><span class="icon">📷</span>Toque para tirar ou escolher a foto</div>
+    </div>
+    <input type="file" id="wallInput" accept="image/*" capture="environment">
+    <div class="btn-row">
+      <button class="btn btn-primary" id="toStep2" disabled>Continuar</button>
+    </div>
+  </section>
+
+  <!-- STEP 2: Medidas -->
+  <section class="screen" id="screen-measure">
+    <div class="title-block">
+      <span class="eyebrow">Passo 2</span>
+      <h2>Medidas da parede</h2>
+      <p>Meça com trena. Se a parede não for perfeitamente reta ou quadrada, ative "parede torta" e informe as 4 alturas dos cantos.</p>
+    </div>
+    <div class="card">
+      <fieldset>
+        <div class="grid-2">
+          <label class="field">Largura (cm)
+            <input type="number" inputmode="decimal" id="wallWidth" placeholder="ex: 210">
+          </label>
+          <label class="field">Altura média (cm)
+            <input type="number" inputmode="decimal" id="wallHeight" placeholder="ex: 240">
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <span>Parede torta / fora de esquadro</span>
+          <button class="switch" id="crookedToggle"></button>
+        </div>
+
+        <div id="crookedFields" style="display:none;">
+          <div class="note-box">Meça a altura da parede em cada canto (do chão até o teto), em cm. Isso ajuda a calcular onde os cortes ficam menos visíveis.</div>
+          <div class="grid-2" style="margin-top:10px;">
+            <label class="field"><span class="corner-label">Canto sup. esq.</span>
+              <input type="number" inputmode="decimal" id="cornerTL" placeholder="cm"></label>
+            <label class="field"><span class="corner-label">Canto sup. dir.</span>
+              <input type="number" inputmode="decimal" id="cornerTR" placeholder="cm"></label>
+            <label class="field"><span class="corner-label">Canto inf. esq.</span>
+              <input type="number" inputmode="decimal" id="cornerBL" placeholder="cm"></label>
+            <label class="field"><span class="corner-label">Canto inf. dir.</span>
+              <input type="number" inputmode="decimal" id="cornerBR" placeholder="cm"></label>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" data-back="screen-wall">Voltar</button>
+      <button class="btn btn-primary" id="toStep3">Continuar</button>
+    </div>
+  </section>
+
+  <!-- STEP 3: Foto do tile -->
+  <section class="screen" id="screen-tile">
+    <div class="title-block">
+      <span class="eyebrow">Passo 3</span>
+      <h2>Foto do revestimento</h2>
+      <p>Foto de perto do tile/azulejo (uma peça ou uma amostra), bem iluminada, sem sombra forte.</p>
+    </div>
+    <div class="photo-slot" id="tileSlot" tabindex="0">
+      <div class="placeholder"><span class="icon">🧱</span>Toque para tirar ou escolher a foto</div>
+    </div>
+    <input type="file" id="tileInput" accept="image/*" capture="environment">
+    <div class="card">
+      <div class="grid-2">
+        <label class="field">Largura do tile (cm)
+          <input type="number" inputmode="decimal" id="tileWidth" placeholder="ex: 30">
+        </label>
+        <label class="field">Altura do tile (cm)
+          <input type="number" inputmode="decimal" id="tileHeight" placeholder="ex: 60">
+        </label>
+      </div>
+      <label class="field" style="margin-top:12px;">Espessura do rejunte (mm)
+        <input type="number" inputmode="decimal" id="groutWidth" value="3">
+      </label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" data-back="screen-measure">Voltar</button>
+      <button class="btn btn-primary" id="toStep4" disabled>Continuar</button>
+    </div>
+  </section>
+
+  <!-- STEP 4: API key (uma vez só) -->
+  <section class="screen" id="screen-key">
+    <div class="title-block">
+      <span class="eyebrow">Passo 4</span>
+      <h2>Chave da API do Google Gemini</h2>
+      <p>Usada só no seu aparelho para gerar a imagem com o tile aplicado. É gratuita para gerar algumas imagens por dia.</p>
+    </div>
+    <div class="card">
+      <label class="field">Chave da API (Gemini)
+        <input type="password" id="apiKey" placeholder="AIza...">
+      </label>
+      <p style="font-size:12px; color:var(--porcelain-dim); margin:10px 0 0;">
+        Não tem uma chave? Crie grátis em
+        <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--glaze-bright);">aistudio.google.com/apikey</a>
+        e cole aqui. Fica salva só neste aparelho.
+      </p>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" data-back="screen-tile">Voltar</button>
+      <button class="btn btn-primary" id="toStep5">Gerar layout</button>
+    </div>
+  </section>
+
+  <!-- STEP 5: Resultado -->
+  <section class="screen" id="screen-result">
+    <div class="title-block">
+      <span class="eyebrow">Resultado</span>
+      <h2>Layout recomendado</h2>
+      <p id="resultSubtitle">Calculando a melhor distribuição dos tiles na sua parede...</p>
+    </div>
+
+    <div id="loadingBox" class="loading">
+      <div class="spinner"></div> Gerando visualização com IA...
+    </div>
+
+    <div id="errorBox" class="error-box" style="display:none;"></div>
+
+    <div id="resultContent" style="display:none; flex-direction:column; gap:18px;">
+      <div class="stat-strip">
+        <div class="stat"><span class="num mono" id="statCols">–</span><span class="lbl">colunas</span></div>
+        <div class="stat"><span class="num mono" id="statRows">–</span><span class="lbl">linhas</span></div>
+        <div class="stat"><span class="num mono" id="statTiles">–</span><span class="lbl">tiles totais</span></div>
+      </div>
+
+      <div class="result-canvas-wrap">
+        <canvas id="layoutCanvas"></canvas>
+      </div>
+
+      <div class="card" id="aiImageCard" style="display:none;">
+        <h3 style="font-size:14px; margin-bottom:10px;">Visualização gerada (IA)</h3>
+        <img id="aiResultImg" style="width:100%; border-radius:10px; display:block;">
+      </div>
+
+      <div class="note-box" id="recommendationNote"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" data-back="screen-key">Voltar</button>
+      <button class="btn btn-primary" id="restartBtn">Começar de novo</button>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
