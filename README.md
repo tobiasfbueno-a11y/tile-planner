@@ -6,16 +6,15 @@ com o tile aplicado usando IA (Google Gemini).
 
 Não precisa de Xcode, App Store, nem servidor pago.
 
-## 1. Pegue uma chave grátis da API do Gemini
+## 1. Pegue uma chave grátis da API da Pollinations
 
-1. Acesse **https://aistudio.google.com/apikey**
-2. Faça login com sua conta Google
-3. Clique em "Create API key"
-4. Copie a chave (começa com `AIza...`) — você vai colar dentro do app depois
+1. Acesse **https://enter.pollinations.ai**
+2. Faça login com sua conta do GitHub
+3. Crie uma chave do tipo **"publishable"** (vai começar com `pk_`)
+4. Copie a chave — você vai colar dentro do app depois
 
-AQ.Ab8RN6Lxjv4DB293yur7kzAKuTCKpCXmsjGZQJvLmgVCFGC7pg
-
-O plano gratuito permite gerar algumas imagens por dia sem custo.
+Não pede cartão de crédito. O uso do app fica dentro da cota gratuita
+("pollen") renovada periodicamente pela plataforma.
 
 ## 2. Publique o app no GitHub Pages (grátis, sem terminal)
 
@@ -45,8 +44,8 @@ inclusive no Safari do iPhone.
 2. Passo 2: digite largura e altura (meça com trena). Se a parede for torta,
    ative o interruptor e informe a altura dos 4 cantos
 3. Passo 3: fotografe o tile e digite as medidas dele + espessura do rejunte
-4. Passo 4: cole sua chave da API do Gemini (só precisa fazer isso uma vez,
-   ela fica salva no navegador do seu iPhone)
+4. Passo 4: cole sua chave da API da Pollinations (só precisa fazer isso uma
+   vez, ela fica salva no navegador do seu iPhone)
 5. Veja o resultado: diagrama com o layout calculado (quantos tiles, onde
    ficam os cortes) e uma imagem gerada por IA mostrando como fica na prática
 

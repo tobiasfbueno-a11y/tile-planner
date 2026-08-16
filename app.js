@@ -86,14 +86,14 @@ function checkStep3Ready() {
 }
 
 document.getElementById('toStep4').addEventListener('click', () => {
-  const saved = localStorage.getItem('gemini_api_key');
+  const saved = localStorage.getItem('pollinations_api_key');
   if (saved) document.getElementById('apiKey').value = saved;
   goTo('screen-key');
 });
 
 document.getElementById('toStep5').addEventListener('click', () => {
   const key = document.getElementById('apiKey').value.trim();
-  if (key) localStorage.setItem('gemini_api_key', key);
+  if (key) localStorage.setItem('pollinations_api_key', key);
   goTo('screen-result');
   runCalculation();
 });
@@ -237,12 +237,12 @@ async function runCalculation() {
   document.getElementById('resultSubtitle').textContent = 'Aqui está a distribuição calculada:';
 
   // Try AI image generation (optional — degrade gracefully if no key or fails)
-  const apiKey = localStorage.getItem('gemini_api_key');
+  const apiKey = localStorage.getItem('pollinations_api_key');
   if (apiKey && state.wallDataUrl && state.tileDataUrl) {
     document.getElementById('loadingBox').style.display = 'flex';
     try {
-      const imgB64 = await generateTiledImage(apiKey, layout);
-      document.getElementById('aiResultImg').src = `data:image/png;base64,${imgB64}`;
+      const imgUrl = await generateTiledImage(apiKey, layout);
+      document.getElementById('aiResultImg').src = imgUrl;
       document.getElementById('aiImageCard').style.display = 'block';
     } catch (err) {
       document.getElementById('errorBox').style.display = 'block';
@@ -253,38 +253,30 @@ async function runCalculation() {
   document.getElementById('loadingBox').style.display = 'none';
 }
 
-// ---------- Gemini image generation ----------
+// ---------- Pollinations.ai image editing (free tier) ----------
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(',');
+  const mime = header.substring(5, header.indexOf(';'));
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 async function generateTiledImage(apiKey, layout) {
-  const wallBase64 = state.wallDataUrl.split(',')[1];
-  const tileBase64 = state.tileDataUrl.split(',')[1];
-  const wallMime = state.wallDataUrl.substring(5, state.wallDataUrl.indexOf(';'));
-  const tileMime = state.tileDataUrl.substring(5, state.tileDataUrl.indexOf(';'));
+  const prompt = `Renderização fotorrealista da parede de banheiro (primeira imagem) revestida com o padrão do tile de referência (segunda imagem). Respeite a perspectiva original, incluindo paredes tortas ou fora de esquadro. Use um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com rejunte fino e realista. Mantenha piso, teto, box e metais inalterados, sem adicionar elementos novos.`;
 
-  const prompt = `Você é um especialista em renderização de acabamentos de interiores.
-Imagem 1: foto real de uma parede de banheiro.
-Imagem 2: amostra/foto de um revestimento (tile) que deve ser aplicado nessa parede.
-Tarefa: gere uma nova versão fotorrealista da Imagem 1 em que a parede está revestida com o padrão da Imagem 2, respeitando a perspectiva original da foto, incluindo distorções de paredes tortas ou fora de esquadro.
-Use um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas de tiles, com linhas de rejunte finas e realistas.
-Mantenha todos os outros elementos da foto (piso, teto, box, metais, iluminação) inalterados. Não adicione elementos que não estavam na foto original.`;
+  const form = new FormData();
+  form.append('image', dataUrlToBlob(state.wallDataUrl), 'parede.jpg');
+  form.append('image', dataUrlToBlob(state.tileDataUrl), 'tile.jpg');
+  form.append('prompt', prompt);
+  form.append('model', 'nanobanana');
 
-  const body = {
-    contents: [{
-      parts: [
-        { text: prompt },
-        { inline_data: { mime_type: wallMime, data: wallBase64 } },
-        { inline_data: { mime_type: tileMime, data: tileBase64 } },
-      ]
-    }]
-  };
-
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }
-  );
+  const resp = await fetch('https://gen.pollinations.ai/v1/images/edits', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -292,10 +284,11 @@ Mantenha todos os outros elementos da foto (piso, teto, box, metais, iluminaçã
   }
 
   const data = await resp.json();
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find(p => p.inline_data || p.inlineData);
-  if (!imgPart) throw new Error('a resposta não trouxe uma imagem');
-  return (imgPart.inline_data || imgPart.inlineData).data;
+  const item = data?.data?.[0];
+  if (!item) throw new Error('a resposta não trouxe uma imagem');
+  if (item.url) return item.url;
+  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
+  throw new Error('formato de resposta inesperado');
 }
 
 // ---------- Service worker (offline shell) ----------
