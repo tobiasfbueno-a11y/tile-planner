@@ -56,6 +56,14 @@ header.app-header h1 {
   font-weight: 700;
 }
 
+.version-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--grout);
+  vertical-align: middle;
+  font-weight: 400;
+}
+
 header.app-header .step-tag {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;

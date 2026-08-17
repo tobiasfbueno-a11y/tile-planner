@@ -1,3 +1,7 @@
+// ---------- Version (bump this on every update — compare with what's on screen) ----------
+const APP_VERSION = 'v6';
+document.getElementById('appVersion').textContent = APP_VERSION;
+
 // ---------- State ----------
 const state = {
   wallFile: null,
