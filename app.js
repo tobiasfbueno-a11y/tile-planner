@@ -70,7 +70,7 @@ document.getElementById('toStep3').addEventListener('click', () => {
   const w = parseFloat(document.getElementById('wallWidth').value);
   const h = parseFloat(document.getElementById('wallHeight').value);
   if (!w || !h) {
-    alert('Preencha largura e altura da parede.');
+    alert('Preencha largura e altura do espaço.');
     return;
   }
   goTo('screen-tile');
@@ -106,10 +106,11 @@ document.getElementById('restartBtn').addEventListener('click', () => {
 function computeLayout() {
   const wallWidth = parseFloat(document.getElementById('wallWidth').value);
   let wallHeight = parseFloat(document.getElementById('wallHeight').value);
-  const tileW = parseFloat(document.getElementById('tileWidth').value);
-  const tileH = parseFloat(document.getElementById('tileHeight').value);
-  const groutMm = parseFloat(document.getElementById('groutWidth').value) || 3;
-  const groutCm = groutMm / 10;
+  let tileW = parseFloat(document.getElementById('tileWidth').value);
+  let tileH = parseFloat(document.getElementById('tileHeight').value);
+  const groutIn = parseFloat(document.getElementById('groutWidth').value) || 0.125;
+  const orientation = document.getElementById('tileOrientation').value; // horizontal | vertical | diamond
+  const pattern = document.getElementById('tilePattern').value; // straight | brick | third | thirdMirrored
 
   let corners = null;
   let heightVariation = 0;
@@ -124,39 +125,105 @@ function computeLayout() {
     heightVariation = Math.max(...heights) - Math.min(...heights);
   }
 
-  const effW = tileW + groutCm;
-  const effH = tileH + groutCm;
+  // Orientation: "vertical" rotates the tile 90°, "diamond" treats it as a
+  // square laid on its point (uses the diagonal as the repeating unit).
+  const diagonalMode = orientation === 'diamond';
+  if (orientation === 'vertical') { [tileW, tileH] = [tileH, tileW]; }
 
-  const colsFull = Math.floor(wallWidth / effW);
-  const remW = +(wallWidth - colsFull * effW).toFixed(1);
-  const edgeCutW = +(remW / 2).toFixed(1);
+  let effW, effH, diagonalWaste = 1;
+  if (diagonalMode) {
+    const diag = Math.sqrt(tileW * tileW + tileH * tileH);
+    effW = diag + groutIn;
+    effH = diag + groutIn;
+    // Diamond layouts need extra material for the triangular cuts along every edge.
+    diagonalWaste = 1.15;
+  } else {
+    effW = tileW + groutIn;
+    effH = tileH + groutIn;
+  }
 
+  // Vertical (row) split is the same regardless of horizontal pattern offset.
   const rowsFull = Math.floor(wallHeight / effH);
-  const remH = +(wallHeight - rowsFull * effH).toFixed(1);
-  const edgeCutH = +(remH / 2).toFixed(1);
-
-  const hasVerticalCut = remW > 0.5;
-  const hasHorizontalCut = remH > 0.5;
-
-  const totalCols = colsFull + (hasVerticalCut ? 2 : 0);
+  const remH = +(wallHeight - rowsFull * effH).toFixed(2);
+  const edgeCutH = +(remH / 2).toFixed(2);
+  const hasHorizontalCut = remH > 0.05;
   const totalRows = rowsFull + (hasHorizontalCut ? 2 : 0);
-  const totalTiles = totalCols * totalRows;
 
-  const thinSliverWarning = (hasVerticalCut && edgeCutW < tileW * 0.25) ||
+  let colsFull, remW, edgeCutW, hasVerticalCut, totalCols, totalTiles, colsRange = null;
+
+  if (pattern === 'straight' || diagonalMode) {
+    // Centered grid: cuts split evenly on both edges, same for every row.
+    colsFull = Math.floor(wallWidth / effW);
+    remW = +(wallWidth - colsFull * effW).toFixed(2);
+    edgeCutW = +(remW / 2).toFixed(2);
+    hasVerticalCut = remW > 0.05;
+    totalCols = colsFull + (hasVerticalCut ? 2 : 0);
+    totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
+  } else {
+    // Running-bond style patterns: each row is offset horizontally, so the
+    // cut pieces land in different spots row to row. Compute row by row.
+    const rowsCount = Math.max(totalRows, 1);
+    let minCols = Infinity, maxCols = -Infinity, sumCols = 0;
+    for (let r = 0; r < rowsCount; r++) {
+      const offset = rowOffset(pattern, r, effW);
+      const row = buildRowColumns(effW, wallWidth, offset);
+      minCols = Math.min(minCols, row.length);
+      maxCols = Math.max(maxCols, row.length);
+      sumCols += row.length;
+    }
+    colsFull = Math.floor(wallWidth / effW);
+    remW = +(wallWidth - colsFull * effW).toFixed(2);
+    edgeCutW = +(remW / 2).toFixed(2);
+    hasVerticalCut = true; // offset patterns virtually always produce edge cuts somewhere
+    totalCols = maxCols;
+    colsRange = minCols === maxCols ? `${minCols}` : `${minCols}–${maxCols}`;
+    totalTiles = sumCols;
+  }
+
+  const thinSliverWarning = (hasVerticalCut && edgeCutW > 0 && edgeCutW < tileW * 0.25) ||
                              (hasHorizontalCut && edgeCutH < tileH * 0.25);
 
   return {
-    wallWidth, wallHeight, tileW, tileH, groutCm,
-    colsFull, remW, edgeCutW, hasVerticalCut,
+    wallWidth, wallHeight, tileW, tileH, groutIn,
+    orientation, pattern, diagonalMode,
+    colsFull, remW, edgeCutW, hasVerticalCut, colsRange,
     rowsFull, remH, edgeCutH, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
     thinSliverWarning, corners, heightVariation,
+    effW, effH,
   };
+}
+
+// Horizontal offset (in inches) applied to a given row for offset patterns.
+function rowOffset(pattern, rowIndex, effW) {
+  if (pattern === 'brick') return (rowIndex % 2 === 1) ? effW / 2 : 0;
+  if (pattern === 'third') return (rowIndex % 3) * (effW / 3);
+  if (pattern === 'thirdMirrored') return (rowIndex % 2 === 0) ? effW / 3 : (2 * effW) / 3;
+  return 0;
+}
+
+// Builds the list of tile/cut-piece widths for one row given a starting offset.
+function buildRowColumns(effW, wallWidth, offset) {
+  const cols = [];
+  let remaining = wallWidth;
+  if (offset > 0.05) {
+    const firstW = Math.min(effW - offset, wallWidth);
+    cols.push({ width: firstW, cut: true });
+    remaining -= firstW;
+  }
+  while (remaining > effW + 0.05) {
+    cols.push({ width: effW, cut: false });
+    remaining -= effW;
+  }
+  if (remaining > 0.05) {
+    cols.push({ width: remaining, cut: remaining < effW - 0.05 });
+  }
+  return cols;
 }
 
 function drawLayout(layout) {
   const canvas = document.getElementById('layoutCanvas');
-  const scale = 3.2; // px per cm
+  const scale = 8; // px per inch
   const padding = 20;
   canvas.width = layout.wallWidth * scale + padding * 2;
   canvas.height = layout.wallHeight * scale + padding * 2;
@@ -166,12 +233,9 @@ function drawLayout(layout) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
-  ctx.translate(padding, padding);
-
-  const colWidths = [];
-  if (layout.hasVerticalCut) colWidths.push(layout.edgeCutW);
-  for (let i = 0; i < layout.colsFull; i++) colWidths.push(layout.tileW);
-  if (layout.hasVerticalCut) colWidths.push(layout.edgeCutW);
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  if (layout.diagonalMode) ctx.rotate(Math.PI / 4);
+  ctx.translate(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2);
 
   const rowHeights = [];
   if (layout.hasHorizontalCut) rowHeights.push(layout.edgeCutH);
@@ -180,21 +244,29 @@ function drawLayout(layout) {
 
   let y = 0;
   for (let r = 0; r < rowHeights.length; r++) {
-    let x = 0;
     const rh = rowHeights[r];
     const isCutRow = layout.hasHorizontalCut && (r === 0 || r === rowHeights.length - 1);
-    for (let c = 0; c < colWidths.length; c++) {
-      const cw = colWidths[c];
-      const isCutCol = layout.hasVerticalCut && (c === 0 || c === colWidths.length - 1);
-      const isCut = isCutRow || isCutCol;
 
+    let colWidths;
+    if (layout.pattern === 'straight' || layout.diagonalMode) {
+      colWidths = [];
+      if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
+      for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
+      if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
+    } else {
+      const offset = rowOffset(layout.pattern, r, layout.effW);
+      colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
+    }
+
+    let x = 0;
+    for (const col of colWidths) {
+      const isCut = isCutRow || col.cut;
       ctx.fillStyle = isCut ? 'rgba(181,103,58,0.35)' : 'rgba(62,124,122,0.35)';
-      ctx.fillRect(x * scale, y * scale, cw * scale, rh * scale);
+      ctx.fillRect(x * scale, y * scale, col.width * scale, rh * scale);
       ctx.strokeStyle = '#EDEAE4';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x * scale, y * scale, cw * scale, rh * scale);
-
-      x += cw;
+      ctx.strokeRect(x * scale, y * scale, col.width * scale, rh * scale);
+      x += col.width;
     }
     y += rh;
   }
@@ -209,27 +281,36 @@ async function runCalculation() {
   document.getElementById('resultContent').style.display = 'none';
   document.getElementById('errorBox').style.display = 'none';
   document.getElementById('resultSubtitle').textContent =
-    'Calculando a melhor distribuição dos tiles na sua parede...';
+    'Calculando a melhor distribuição dos tiles no seu espaço...';
 
-  document.getElementById('statCols').textContent = layout.totalCols;
+  document.getElementById('statCols').textContent = layout.colsRange || layout.totalCols;
   document.getElementById('statRows').textContent = layout.totalRows;
   document.getElementById('statTiles').textContent = layout.totalTiles;
   drawLayout(layout);
 
-  let note = `Layout centralizado: `;
-  if (!layout.hasVerticalCut && !layout.hasHorizontalCut) {
-    note += `os tiles encaixam perfeitamente na largura e altura da parede, sem cortes.`;
+  const orientationLabel = { horizontal: 'horizontal', vertical: 'vertical', diamond: 'diamante (45°)' }[layout.orientation];
+  const patternLabel = { straight: 'reto', brick: 'amarração/brick', third: '1/3', thirdMirrored: '1/3 espelhado' }[layout.pattern];
+
+  let note = `Orientação ${orientationLabel}, padrão ${patternLabel}. `;
+  if (layout.diagonalMode) {
+    note += `Em layout diamante, o cálculo já inclui cerca de 15% de material extra pra cobrir os cortes triangulares nas bordas — é uma estimativa; confirme o valor exato com quem for instalar.`;
+  } else if (layout.pattern === 'straight') {
+    if (!layout.hasVerticalCut && !layout.hasHorizontalCut) {
+      note += `Os tiles encaixam perfeitamente na largura e altura do espaço, sem cortes.`;
+    } else {
+      const parts = [];
+      if (layout.hasVerticalCut) parts.push(`cortes de ${layout.edgeCutW}" nas bordas laterais (esquerda e direita)`);
+      if (layout.hasHorizontalCut) parts.push(`cortes de ${layout.edgeCutH}" nas bordas de cima e baixo`);
+      note += `Layout centralizado: ` + parts.join(' e ') + `. Os cortes ficam iguais dos dois lados, o que fica visualmente mais equilibrado do que jogar a sobra toda para um lado só.`;
+    }
   } else {
-    const parts = [];
-    if (layout.hasVerticalCut) parts.push(`cortes de ${layout.edgeCutW} cm nas bordas laterais (esquerda e direita)`);
-    if (layout.hasHorizontalCut) parts.push(`cortes de ${layout.edgeCutH} cm nas bordas de cima e baixo`);
-    note += parts.join(' e ') + `. Os cortes ficam iguais dos dois lados, o que fica visualmente mais equilibrado do que jogar a sobra toda para um lado só.`;
+    note += `Cada fileira é deslocada horizontalmente (offset), então os cortes aparecem em pontos diferentes fileira a fileira — normal nesse tipo de padrão. O número de colunas varia entre ${layout.colsRange} por fileira.`;
   }
   if (layout.thinSliverWarning) {
-    note += ` ⚠️ Atenção: uma das tiras de corte ficou bem fina, o que é frágil e feio. Considere ajustar o ponto de partida (começar meio tile mais cedo) ou usar um tile de tamanho diferente.`;
+    note += ` ⚠️ Atenção: uma das tiras de corte ficou bem fina, o que é frágil e feio. Considere ajustar o ponto de partida ou usar um tile de tamanho diferente.`;
   }
-  if (state.crooked && layout.heightVariation > 1) {
-    note += ` A parede varia ${layout.heightVariation.toFixed(1)} cm de altura entre os cantos — use nível a laser, comece a primeira fileira nivelada a partir do canto mais alto, e ajuste os cortes da última fileira individualmente conforme a inclinação real do teto/chão.`;
+  if (state.crooked && layout.heightVariation > 0.4) {
+    note += ` O espaço varia ${layout.heightVariation.toFixed(2)}" entre os cantos — use nível a laser, comece a primeira fileira nivelada a partir do ponto mais alto, e ajuste os cortes da última fileira individualmente conforme a inclinação real.`;
   }
   document.getElementById('recommendationNote').textContent = note;
 
@@ -264,13 +345,22 @@ function dataUrlToBlob(dataUrl) {
 }
 
 async function generateTiledImage(apiKey, layout) {
-  const prompt = `Renderização fotorrealista da parede de banheiro (primeira imagem) revestida com o padrão do tile de referência (segunda imagem). Respeite a perspectiva original, incluindo paredes tortas ou fora de esquadro. Use um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com rejunte fino e realista. Mantenha piso, teto, box e metais inalterados, sem adicionar elementos novos.`;
+  // Step 1: describe the tile photo in words (cheap text+vision call)
+  const tileDescription = await describeTile(apiKey);
+
+  // Step 2: edit the wall photo with kontext (Flux family — free tier)
+  const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
+  const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
+
+  const prompt = `Renderização fotorrealista desta parede de banheiro, agora revestida com um tile cerâmico assim: ${tileDescription}.
+Respeite a perspectiva original da foto, incluindo paredes tortas ou fora de esquadro.
+Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas de tiles, com linhas de rejunte finas e realistas.
+Mantenha piso, teto, box, metais e iluminação inalterados. Não adicione elementos que não estavam na foto original.`;
 
   const form = new FormData();
   form.append('image', dataUrlToBlob(state.wallDataUrl), 'parede.jpg');
-  form.append('image', dataUrlToBlob(state.tileDataUrl), 'tile.jpg');
   form.append('prompt', prompt);
-  form.append('model', 'nanobanana');
+  form.append('model', 'kontext');
 
   const resp = await fetch('https://gen.pollinations.ai/v1/images/edits', {
     method: 'POST',
@@ -289,6 +379,32 @@ async function generateTiledImage(apiKey, layout) {
   if (item.url) return item.url;
   if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
   throw new Error('formato de resposta inesperado');
+}
+
+async function describeTile(apiKey) {
+  const resp = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'openai',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Descreva em até 30 palavras, em português, a cor, textura e padrão deste tile/azulejo cerâmico, como se estivesse orientando um renderizador de imagens a reproduzi-lo. Seja objetivo, sem floreios.' },
+          { type: 'image_url', image_url: { url: state.tileDataUrl } },
+        ],
+      }],
+    }),
+  });
+  if (!resp.ok) {
+    // If describing fails, fall back to a generic description rather than blocking the flow
+    return 'tile cerâmico neutro, conforme a foto de referência do usuário';
+  }
+  const data = await resp.json();
+  return data?.choices?.[0]?.message?.content?.trim() || 'tile cerâmico neutro';
 }
 
 // ---------- Service worker (offline shell) ----------

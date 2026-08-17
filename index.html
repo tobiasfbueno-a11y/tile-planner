@@ -22,12 +22,12 @@
 
 <main>
 
-  <!-- STEP 1: Foto da parede -->
+  <!-- STEP 1: Foto do espaço -->
   <section class="screen active" id="screen-wall">
     <div class="title-block">
       <span class="eyebrow">Passo 1</span>
-      <h2>Foto do banheiro</h2>
-      <p>Tire uma foto da parede que vai receber o revestimento. Tente pegar a parede inteira, de frente.</p>
+      <h2>Foto do espaço</h2>
+      <p>Tire uma foto do espaço que vai receber o revestimento — parede, piso, ou qualquer superfície. Tente pegar tudo de frente (ou de cima, se for piso).</p>
     </div>
     <div class="photo-slot" id="wallSlot" tabindex="0">
       <div class="placeholder"><span class="icon">📷</span>Toque para tirar ou escolher a foto</div>
@@ -42,36 +42,36 @@
   <section class="screen" id="screen-measure">
     <div class="title-block">
       <span class="eyebrow">Passo 2</span>
-      <h2>Medidas da parede</h2>
-      <p>Meça com trena. Se a parede não for perfeitamente reta ou quadrada, ative "parede torta" e informe as 4 alturas dos cantos.</p>
+      <h2>Medidas do espaço</h2>
+      <p>Meça com trena, em polegadas. Se a superfície não for perfeitamente reta ou quadrada, ative "superfície irregular" e informe as medidas dos 4 cantos.</p>
     </div>
     <div class="card">
       <fieldset>
         <div class="grid-2">
-          <label class="field">Largura (cm)
-            <input type="number" inputmode="decimal" id="wallWidth" placeholder="ex: 210">
+          <label class="field">Largura (pol)
+            <input type="number" inputmode="decimal" id="wallWidth" placeholder="ex: 82.5">
           </label>
-          <label class="field">Altura média (cm)
-            <input type="number" inputmode="decimal" id="wallHeight" placeholder="ex: 240">
+          <label class="field">Altura / comprimento (pol)
+            <input type="number" inputmode="decimal" id="wallHeight" placeholder="ex: 96">
           </label>
         </div>
 
         <div class="toggle-row">
-          <span>Parede torta / fora de esquadro</span>
+          <span>Superfície irregular / fora de esquadro</span>
           <button class="switch" id="crookedToggle"></button>
         </div>
 
         <div id="crookedFields" style="display:none;">
-          <div class="note-box">Meça a altura da parede em cada canto (do chão até o teto), em cm. Isso ajuda a calcular onde os cortes ficam menos visíveis.</div>
+          <div class="note-box">Meça a medida (altura da parede ou comprimento do piso) em cada canto, em polegadas. Isso ajuda a calcular onde os cortes ficam menos visíveis.</div>
           <div class="grid-2" style="margin-top:10px;">
             <label class="field"><span class="corner-label">Canto sup. esq.</span>
-              <input type="number" inputmode="decimal" id="cornerTL" placeholder="cm"></label>
+              <input type="number" inputmode="decimal" id="cornerTL" placeholder="pol"></label>
             <label class="field"><span class="corner-label">Canto sup. dir.</span>
-              <input type="number" inputmode="decimal" id="cornerTR" placeholder="cm"></label>
+              <input type="number" inputmode="decimal" id="cornerTR" placeholder="pol"></label>
             <label class="field"><span class="corner-label">Canto inf. esq.</span>
-              <input type="number" inputmode="decimal" id="cornerBL" placeholder="cm"></label>
+              <input type="number" inputmode="decimal" id="cornerBL" placeholder="pol"></label>
             <label class="field"><span class="corner-label">Canto inf. dir.</span>
-              <input type="number" inputmode="decimal" id="cornerBR" placeholder="cm"></label>
+              <input type="number" inputmode="decimal" id="cornerBR" placeholder="pol"></label>
           </div>
         </div>
       </fieldset>
@@ -95,15 +95,32 @@
     <input type="file" id="tileInput" accept="image/*" capture="environment">
     <div class="card">
       <div class="grid-2">
-        <label class="field">Largura do tile (cm)
-          <input type="number" inputmode="decimal" id="tileWidth" placeholder="ex: 30">
+        <label class="field">Largura do tile (pol)
+          <input type="number" inputmode="decimal" id="tileWidth" placeholder="ex: 12">
         </label>
-        <label class="field">Altura do tile (cm)
-          <input type="number" inputmode="decimal" id="tileHeight" placeholder="ex: 60">
+        <label class="field">Altura do tile (pol)
+          <input type="number" inputmode="decimal" id="tileHeight" placeholder="ex: 24">
         </label>
       </div>
-      <label class="field" style="margin-top:12px;">Espessura do rejunte (mm)
-        <input type="number" inputmode="decimal" id="groutWidth" value="3">
+      <label class="field" style="margin-top:12px;">Espessura do rejunte (pol)
+        <input type="number" inputmode="decimal" id="groutWidth" value="0.125" step="0.0625">
+      </label>
+
+      <label class="field" style="margin-top:12px;">Orientação do tile
+        <select id="tileOrientation">
+          <option value="horizontal">Horizontal (deitado)</option>
+          <option value="vertical">Vertical (em pé)</option>
+          <option value="diamond">Diamante (45°)</option>
+        </select>
+      </label>
+
+      <label class="field" style="margin-top:12px;" id="patternField">Padrão de assentamento
+        <select id="tilePattern">
+          <option value="straight">Reto (straight lay / grade alinhada)</option>
+          <option value="brick">Amarração / brick (deslocamento de 1/2)</option>
+          <option value="third">1/3 (deslocamento progressivo)</option>
+          <option value="thirdMirrored">1/3 espelhado (alterna a cada fileira)</option>
+        </select>
       </label>
     </div>
     <div class="btn-row">
@@ -140,7 +157,7 @@
     <div class="title-block">
       <span class="eyebrow">Resultado</span>
       <h2>Layout recomendado</h2>
-      <p id="resultSubtitle">Calculando a melhor distribuição dos tiles na sua parede...</p>
+      <p id="resultSubtitle">Calculando a melhor distribuição dos tiles no seu espaço...</p>
     </div>
 
     <div id="loadingBox" class="loading">

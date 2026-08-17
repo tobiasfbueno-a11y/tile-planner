@@ -40,22 +40,32 @@ inclusive no Safari do iPhone.
 
 ## 4. Usar o app
 
-1. Passo 1: fotografe a parede do banheiro
-2. Passo 2: digite largura e altura (meça com trena). Se a parede for torta,
-   ative o interruptor e informe a altura dos 4 cantos
-3. Passo 3: fotografe o tile e digite as medidas dele + espessura do rejunte
+1. Passo 1: fotografe o espaço (parede ou piso)
+2. Passo 2: digite largura e altura/comprimento em polegadas (meça com trena). Se a
+   superfície for irregular, ative o interruptor e informe a medida dos 4 cantos
+3. Passo 3: fotografe o tile, digite as medidas dele em polegadas + espessura do
+   rejunte, e escolha a **orientação** (horizontal, vertical ou diamante) e o
+   **padrão de assentamento** (reto, brick/amarração, 1/3, ou 1/3 espelhado)
 4. Passo 4: cole sua chave da API da Pollinations (só precisa fazer isso uma
    vez, ela fica salva no navegador do seu iPhone)
 5. Veja o resultado: diagrama com o layout calculado (quantos tiles, onde
-   ficam os cortes) e uma imagem gerada por IA mostrando como fica na prática
+   ficam os cortes, já considerando a orientação e o padrão escolhidos) e uma
+   imagem gerada por IA mostrando como fica na prática
 
 ## Sobre o cálculo do layout
 
-O algoritmo centraliza os tiles na parede, distribuindo os cortes igualmente
-nas duas bordas (em vez de jogar toda sobra pra um lado só, que fica feio).
-Ele avisa se algum corte ficar fino demais (frágil e visualmente ruim) e,
-no caso de paredes tortas, recomenda nivelar pela fileira de baixo/cima e
-ajustar cortes individualmente na última fileira.
+Por padrão (padrão "reto"), o algoritmo centraliza os tiles no espaço,
+distribuindo os cortes igualmente nas duas bordas (em vez de jogar toda sobra
+pra um lado só, que fica feio). Nos padrões com deslocamento (brick, 1/3, 1/3
+espelhado), cada fileira é deslocada horizontalmente e os cortes variam
+fileira a fileira — isso é normal e esperado nesse tipo de assentamento. No
+layout diamante, o cálculo já soma ~15% de material extra para os cortes
+triangulares das bordas (estimativa — confirme com quem for instalar). O app
+sempre avisa se algum corte ficar fino demais (frágil e visualmente ruim) e,
+no caso de superfícies irregulares, recomenda como nivelar e ajustar cortes
+na última fileira.
+
+Todas as medidas do app são em **polegadas** (padrão EUA).
 
 ## Atualizando o app depois
 
