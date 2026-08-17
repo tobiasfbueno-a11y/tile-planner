@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v6';
+const APP_VERSION = 'v7';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -135,6 +135,26 @@ document.getElementById('restartBtn').addEventListener('click', () => {
 });
 
 // ---------- Layout algorithm ----------
+const MIN_CUT_IN = 4; // never leave an edge cut piece thinner than this (fragile + ugly)
+
+// Given a total run and a repeating unit (tile+grout), finds how many full
+// units fit while keeping the two symmetric edge cuts at least MIN_CUT_IN wide.
+// If an edge cut would be too thin, it sacrifices one full tile so the extra
+// width gets folded into both edge pieces instead.
+function centeredSplit(total, unit, minCut) {
+  let n = Math.floor(total / unit);
+  let rem = +(total - n * unit).toFixed(3);
+  let edge = +(rem / 2).toFixed(3);
+  let guard = 0;
+  while (edge > 0.01 && edge < minCut && n > 0 && guard < 20) {
+    n -= 1;
+    rem = +(total - n * unit).toFixed(3);
+    edge = +(rem / 2).toFixed(3);
+    guard++;
+  }
+  return { n, rem, edge };
+}
+
 function computeLayout() {
   const wallWidth = parseFloat(document.getElementById('wallWidth').value);
   let wallHeight = parseFloat(document.getElementById('wallHeight').value);
@@ -182,9 +202,10 @@ function computeLayout() {
   }
 
   // Vertical (row) split is the same regardless of horizontal pattern offset.
-  const rowsFull = Math.floor(wallHeight / effH);
-  const remH = +(wallHeight - rowsFull * effH).toFixed(2);
-  const edgeCutH = +(remH / 2).toFixed(2);
+  const rowSplit = centeredSplit(wallHeight, effH, MIN_CUT_IN);
+  const rowsFull = rowSplit.n;
+  const remH = rowSplit.rem;
+  const edgeCutH = rowSplit.edge;
   const hasHorizontalCut = remH > 0.05;
   const totalRows = rowsFull + (hasHorizontalCut ? 2 : 0);
 
@@ -192,9 +213,10 @@ function computeLayout() {
 
   if (pattern === 'straight' || diagonalMode) {
     // Centered grid: cuts split evenly on both edges, same for every row.
-    colsFull = Math.floor(wallWidth / effW);
-    remW = +(wallWidth - colsFull * effW).toFixed(2);
-    edgeCutW = +(remW / 2).toFixed(2);
+    const colSplit = centeredSplit(wallWidth, effW, MIN_CUT_IN);
+    colsFull = colSplit.n;
+    remW = colSplit.rem;
+    edgeCutW = colSplit.edge;
     hasVerticalCut = remW > 0.05;
     totalCols = colsFull + (hasVerticalCut ? 2 : 0);
     totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
@@ -219,8 +241,8 @@ function computeLayout() {
     totalTiles = sumCols;
   }
 
-  const thinSliverWarning = (hasVerticalCut && edgeCutW > 0 && edgeCutW < tileW * 0.25) ||
-                             (hasHorizontalCut && edgeCutH < tileH * 0.25);
+  const thinSliverWarning = (hasVerticalCut && edgeCutW > 0 && edgeCutW < MIN_CUT_IN - 0.01) ||
+                             (hasHorizontalCut && edgeCutH < MIN_CUT_IN - 0.01);
 
   return {
     wallWidth, wallHeight, tileW, tileH, groutIn,
@@ -242,11 +264,16 @@ function rowOffset(pattern, rowIndex, effW) {
 }
 
 // Builds the list of tile/cut-piece widths for one row given a starting offset.
+// Enforces MIN_CUT_IN: if the first or last piece would be too thin, it merges
+// with the neighboring full tile instead of leaving a fragile sliver.
 function buildRowColumns(effW, wallWidth, offset) {
   const cols = [];
   let remaining = wallWidth;
   if (offset > 0.05) {
-    const firstW = Math.min(effW - offset, wallWidth);
+    let firstW = Math.min(effW - offset, wallWidth);
+    if (firstW < MIN_CUT_IN && remaining > effW) {
+      firstW += effW; // fold the next full tile into this cut piece
+    }
     cols.push({ width: firstW, cut: true });
     remaining -= firstW;
   }
@@ -255,7 +282,17 @@ function buildRowColumns(effW, wallWidth, offset) {
     remaining -= effW;
   }
   if (remaining > 0.05) {
-    cols.push({ width: remaining, cut: remaining < effW - 0.05 });
+    const isCut = remaining < effW - 0.05;
+    if (isCut && remaining < MIN_CUT_IN && cols.length > 0) {
+      // Merge this thin trailing piece into the previous full tile.
+      const prev = cols[cols.length - 1];
+      if (!prev.cut) {
+        prev.width += remaining;
+        prev.cut = false;
+        remaining = 0;
+      }
+    }
+    if (remaining > 0.05) cols.push({ width: remaining, cut: isCut });
   }
   return cols;
 }
@@ -346,7 +383,7 @@ async function runCalculation() {
     note += `Cada fileira é deslocada horizontalmente (offset), então os cortes aparecem em pontos diferentes fileira a fileira — normal nesse tipo de padrão. O número de colunas varia entre ${layout.colsRange} por fileira.`;
   }
   if (layout.thinSliverWarning) {
-    note += ` ⚠️ Atenção: uma das tiras de corte ficou bem fina, o que é frágil e feio. Considere ajustar o ponto de partida ou usar um tile de tamanho diferente.`;
+    note += ` ⚠️ Mesmo puxando um tile a menos, não foi possível manter todos os cortes acima de ${MIN_CUT_IN}" — o espaço é pequeno demais em relação ao tamanho do tile escolhido. Considere um tile menor.`;
   }
   if (state.crooked && layout.heightVariation > 0.4) {
     note += ` O espaço varia ${layout.heightVariation.toFixed(2)}" entre os cantos — use nível a laser, comece a primeira fileira nivelada a partir do ponto mais alto, e ajuste os cortes da última fileira individualmente conforme a inclinação real.`;
