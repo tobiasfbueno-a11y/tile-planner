@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v7';
+const APP_VERSION = 'v8';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -350,6 +350,43 @@ function drawLayout(layout) {
   ctx.restore();
 }
 
+// ---------- Installation start-point guide ----------
+// Tells the installer exactly where to snap chalk lines, measured from the
+// right wall (horizontal) and the floor/back reference (vertical) — always
+// using the straightest side as the reference point, per the user's request.
+function buildInstallGuide(layout) {
+  if (layout.diagonalMode) {
+    return `<p>Layout diamante: em vez de medidas lineares, marque uma linha central cruzando o espaço a 45°, passando pelo ponto médio. A partir dela, alinhe os tiles nos dois sentidos. Recomendo confirmar esse ponto de partida com quem for instalar, já que o corte nas bordas exige ajuste fino peça a peça.</p>`;
+  }
+
+  const rowTypeCount = { straight: 1, brick: 2, third: 3, thirdMirrored: 2 }[layout.pattern];
+  const rowDistances = [];
+  for (let t = 0; t < rowTypeCount; t++) {
+    const offset = rowOffset(layout.pattern, t, layout.effW);
+    const cols = buildRowColumns(layout.effW, layout.wallWidth, offset);
+    const first = cols[0];
+    const distFromRight = (first && first.cut) ? +first.width.toFixed(2) : 0;
+    rowDistances.push(distFromRight);
+  }
+
+  let html = `<p><strong>Linha horizontal inicial (base):</strong> meça ${layout.edgeCutH}" a partir do fundo/chão — essa é a primeira linha de rejunte horizontal. As fileiras seguintes sobem a cada ${layout.effH.toFixed(2)}" (tile + rejunte).</p>`;
+
+  html += `<p><strong>Linha(s) vertical(is) — a partir da parede direita:</strong></p><ul style="padding-left:20px; margin:6px 0;">`;
+  if (rowTypeCount === 1) {
+    html += `<li>Todas as fileiras: ${rowDistances[0]}" da parede direita até a borda do primeiro tile inteiro.</li>`;
+  } else if (rowTypeCount === 2) {
+    html += `<li>Fileiras 1, 3, 5... (contando de baixo pra cima): ${rowDistances[0]}" da parede direita.</li>`;
+    html += `<li>Fileiras 2, 4, 6...: ${rowDistances[1]}" da parede direita.</li>`;
+  } else {
+    html += `<li>Fileiras 1, 4, 7...: ${rowDistances[0]}" da parede direita.</li>`;
+    html += `<li>Fileiras 2, 5, 8...: ${rowDistances[1]}" da parede direita.</li>`;
+    html += `<li>Fileiras 3, 6, 9...: ${rowDistances[2]}" da parede direita.</li>`;
+  }
+  html += `</ul><p style="margin-top:6px;">Sempre meça a partir da parede/lado mais reto do espaço — se as paredes forem irregulares, use o lado que ficou mais próximo do esquadro como sua referência de verdade, e não confie nas outras paredes tortas para alinhar.</p>`;
+
+  return html;
+}
+
 async function runCalculation() {
   const layout = computeLayout();
 
@@ -389,6 +426,9 @@ async function runCalculation() {
     note += ` O espaço varia ${layout.heightVariation.toFixed(2)}" entre os cantos — use nível a laser, comece a primeira fileira nivelada a partir do ponto mais alto, e ajuste os cortes da última fileira individualmente conforme a inclinação real.`;
   }
   document.getElementById('recommendationNote').textContent = note;
+
+  document.getElementById('installGuideContent').innerHTML = buildInstallGuide(layout);
+  document.getElementById('installGuideCard').style.display = 'block';
 
   document.getElementById('resultContent').style.display = 'flex';
   document.getElementById('resultSubtitle').textContent = 'Aqui está a distribuição calculada:';
