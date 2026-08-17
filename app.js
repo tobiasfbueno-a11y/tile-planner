@@ -380,22 +380,21 @@ function dataUrlToBlob(dataUrl) {
 }
 
 async function generateTiledImage(apiKey, layout) {
-  // Step 1: describe the tile photo in words (cheap text+vision call)
-  const tileDescription = await describeTile(apiKey);
-
-  // Step 2: edit the wall photo with kontext (Flux family — free tier)
   const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
   const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
 
-  const prompt = `Renderização fotorrealista desta parede de banheiro, agora revestida com um tile cerâmico assim: ${tileDescription}.
-Respeite a perspectiva original da foto, incluindo paredes tortas ou fora de esquadro.
-Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas de tiles, com linhas de rejunte finas e realistas.
-Mantenha piso, teto, box, metais e iluminação inalterados. Não adicione elementos que não estavam na foto original.`;
+  const prompt = `Imagem 1: foto real de um espaço (parede ou piso) de banheiro.
+Imagem 2: foto real de um tile/revestimento que deve ser aplicado nesse espaço.
+Gere uma versão fotorrealista da Imagem 1 com a superfície completamente coberta pelo padrão, cor e textura exatos da Imagem 2 — use a Imagem 2 como referência literal, não invente outro tile.
+Respeite a perspectiva original da foto, incluindo superfícies tortas ou fora de esquadro.
+Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com linhas de rejunte finas e realistas.
+Mantenha todo o resto da foto original (piso, teto, box, metais, iluminação, enquadramento) inalterado. Não adicione elementos que não estavam na foto original.`;
 
   const form = new FormData();
-  form.append('image', dataUrlToBlob(state.wallDataUrl), 'parede.jpg');
+  form.append('image', dataUrlToBlob(state.wallDataUrl), 'espaco.jpg');
+  form.append('image', dataUrlToBlob(state.tileDataUrl), 'tile.jpg');
   form.append('prompt', prompt);
-  form.append('model', 'kontext');
+  form.append('model', 'nanobanana');
 
   const resp = await fetch('https://gen.pollinations.ai/v1/images/edits', {
     method: 'POST',
@@ -414,32 +413,6 @@ Mantenha piso, teto, box, metais e iluminação inalterados. Não adicione eleme
   if (item.url) return item.url;
   if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
   throw new Error('formato de resposta inesperado');
-}
-
-async function describeTile(apiKey) {
-  const resp = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'openai',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Descreva em até 30 palavras, em português, a cor, textura e padrão deste tile/azulejo cerâmico, como se estivesse orientando um renderizador de imagens a reproduzi-lo. Seja objetivo, sem floreios.' },
-          { type: 'image_url', image_url: { url: state.tileDataUrl } },
-        ],
-      }],
-    }),
-  });
-  if (!resp.ok) {
-    // If describing fails, fall back to a generic description rather than blocking the flow
-    return 'tile cerâmico neutro, conforme a foto de referência do usuário';
-  }
-  const data = await resp.json();
-  return data?.choices?.[0]?.message?.content?.trim() || 'tile cerâmico neutro';
 }
 
 // ---------- Service worker (offline shell) ----------
