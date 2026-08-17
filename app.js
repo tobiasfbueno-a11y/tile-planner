@@ -30,8 +30,9 @@ wallInput.addEventListener('change', async () => {
   const file = wallInput.files[0];
   if (!file) return;
   state.wallFile = file;
-  state.wallDataUrl = await fileToDataUrl(file);
-  wallSlot.innerHTML = `<img src="${state.wallDataUrl}" alt="Foto da parede">`;
+  const raw = await fileToDataUrl(file);
+  state.wallDataUrl = await resizeDataUrl(raw);
+  wallSlot.innerHTML = `<img src="${state.wallDataUrl}" alt="Foto do espaço">`;
   document.getElementById('toStep2').disabled = false;
 });
 
@@ -43,7 +44,8 @@ tileInput.addEventListener('change', async () => {
   const file = tileInput.files[0];
   if (!file) return;
   state.tileFile = file;
-  state.tileDataUrl = await fileToDataUrl(file);
+  const raw = await fileToDataUrl(file);
+  state.tileDataUrl = await resizeDataUrl(raw);
   tileSlot.innerHTML = `<img src="${state.tileDataUrl}" alt="Foto do tile">`;
   checkStep3Ready();
 });
@@ -54,6 +56,32 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// Downscales a data URL image so uploads stay fast and reliable on mobile networks.
+function resizeDataUrl(dataUrl, maxDim = 1440, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
   });
 }
 
@@ -125,10 +153,17 @@ function computeLayout() {
     heightVariation = Math.max(...heights) - Math.min(...heights);
   }
 
-  // Orientation: "vertical" rotates the tile 90°, "diamond" treats it as a
-  // square laid on its point (uses the diagonal as the repeating unit).
+  // Orientation controls which side of the tile runs horizontally, regardless
+  // of the order width/height were typed in. "Horizontal" = long side across
+  // the wall; "vertical" = long side running up-down; "diamond" = on point.
   const diagonalMode = orientation === 'diamond';
-  if (orientation === 'vertical') { [tileW, tileH] = [tileH, tileW]; }
+  const longSide = Math.max(tileW, tileH);
+  const shortSide = Math.min(tileW, tileH);
+  if (orientation === 'horizontal') {
+    tileW = longSide; tileH = shortSide;
+  } else if (orientation === 'vertical') {
+    tileW = shortSide; tileH = longSide;
+  }
 
   let effW, effH, diagonalWaste = 1;
   if (diagonalMode) {
