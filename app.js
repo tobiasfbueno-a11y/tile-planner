@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v16';
+const APP_VERSION = 'v17';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------

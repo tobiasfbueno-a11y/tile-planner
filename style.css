@@ -254,6 +254,15 @@ label.field {
   color: var(--porcelain-dim);
 }
 
+.hint {
+  font-size: 11px;
+  color: var(--porcelain-dim);
+  opacity: 0.65;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 input[type="number"], input[type="text"], input[type="password"], select {
   background: #1a1918;
   border: 1px solid var(--line);
