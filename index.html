@@ -17,7 +17,10 @@
 
 <header class="app-header">
   <h1>🟦 Tile Planner <span id="appVersion" class="version-tag"></span></h1>
-  <span class="step-tag mono" id="stepTag">1 / 5</span>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <button id="forceUpdateBtn" class="settings-link" title="Força buscar a versão mais nova, ignorando cache">🔄 Atualizar</button>
+    <span class="step-tag mono" id="stepTag">1 / 5</span>
+  </div>
 </header>
 
 <main>

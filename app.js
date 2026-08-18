@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v12';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -513,7 +513,25 @@ Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layo
   return imgUrl;
 }
 
-// ---------- Service worker (offline shell) ----------
+// ---------- Force update (dev convenience — wipes SW cache and reloads fresh) ----------
+document.getElementById('forceUpdateBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('forceUpdateBtn');
+  btn.textContent = '⏳ Atualizando...';
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) {
+    // Even if cleanup partially fails, still force a hard reload below.
+  }
+  // Cache-busting query param forces a true network fetch of index.html/app.js.
+  window.location.href = window.location.pathname + '?nocache=' + Date.now();
+});
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {});
