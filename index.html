@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=v16">
 </head>
 <body>
 
@@ -66,20 +66,19 @@
           <button class="switch" id="crookedToggle"></button>
         </div>
 
-        <div class="note-box" style="margin-top:14px;">Como instalador, você decide onde ficam as peças inteiras — o corte fica sempre do lado que menos importa (perto de porta, canto escondido, embaixo de armário/máquina).</div>
-        <div class="grid-2" style="margin-top:10px;">
-          <label class="field">Peça inteira encostada em
+        <div class="grid-2" style="margin-top:14px;">
+          <label class="field">Lado
             <select id="horizAnchor">
-              <option value="center">Centralizado (corte igual dos 2 lados)</option>
-              <option value="left">Parede/lado esquerdo</option>
-              <option value="right">Parede/lado direito</option>
+              <option value="center">Centralizado</option>
+              <option value="left">Esquerda</option>
+              <option value="right">Direita</option>
             </select>
           </label>
-          <label class="field">Peça inteira encostada em
+          <label class="field">Base
             <select id="vertAnchor">
-              <option value="center">Centralizado (corte igual cima/baixo)</option>
-              <option value="bottom">Chão / base</option>
-              <option value="top">Topo / teto</option>
+              <option value="center">Centralizado</option>
+              <option value="bottom">Base</option>
+              <option value="top">Topo</option>
             </select>
           </label>
         </div>
@@ -235,6 +234,6 @@
 
 </main>
 
-<script src="app.js"></script>
+<script src="app.js?v=v16"></script>
 </body>
 </html>

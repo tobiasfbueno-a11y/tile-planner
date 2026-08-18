@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v15';
+const APP_VERSION = 'v16';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -629,8 +629,10 @@ document.getElementById('forceUpdateBtn').addEventListener('click', async () => 
   } catch (e) {
     // Even if cleanup partially fails, still force a hard reload below.
   }
-  // Cache-busting query param forces a true network fetch of index.html/app.js.
-  window.location.href = window.location.pathname + '?nocache=' + Date.now();
+  // Cache-busting query param forces a true network fetch of index.html.
+  // (App.js/style.css are separately versioned via ?v=vN in index.html,
+  // which is the part that was actually going stale before.)
+  window.location.replace(window.location.pathname + '?nocache=' + Date.now());
 });
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
