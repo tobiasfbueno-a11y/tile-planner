@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v10';
+const APP_VERSION = 'v11';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -330,7 +330,11 @@ function drawLayout(layout) {
       for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
       if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
     } else {
-      const offset = rowOffset(layout.pattern, r, layout.effW);
+      // Row offset patterns are counted bottom-up (course 0 = bottom-most
+      // row), matching how the install guide numbers them — not top-down
+      // drawing order.
+      const courseFromBottom = rowHeights.length - 1 - r;
+      const offset = rowOffset(layout.pattern, courseFromBottom, layout.effW);
       colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
     }
 
@@ -434,9 +438,15 @@ async function runCalculation() {
   document.getElementById('resultSubtitle').textContent = 'Aqui está a distribuição calculada:';
 
   // Try AI image generation (optional — degrade gracefully if no key or fails)
+  await tryGenerateImage(layout);
+  document.getElementById('loadingBox').style.display = 'none';
+}
+
+async function tryGenerateImage(layout) {
   const apiKey = localStorage.getItem('openrouter_api_key');
   if (apiKey && state.wallDataUrl && state.tileDataUrl) {
     document.getElementById('loadingBox').style.display = 'flex';
+    document.getElementById('errorBox').style.display = 'none';
     try {
       const imgUrl = await generateTiledImage(apiKey, layout);
       document.getElementById('aiResultImg').src = imgUrl;
@@ -446,21 +456,30 @@ async function runCalculation() {
       document.getElementById('errorBox').textContent =
         'Não consegui gerar a imagem com IA (' + err.message + '). O diagrama acima com as medidas continua válido.';
     }
+    document.getElementById('loadingBox').style.display = 'none';
   }
-  document.getElementById('loadingBox').style.display = 'none';
 }
+
+document.getElementById('regenBtn').addEventListener('click', () => {
+  const layout = computeLayout();
+  tryGenerateImage(layout);
+});
 
 // ---------- OpenRouter image editing (pay-as-you-go, $5 minimum) ----------
 async function generateTiledImage(apiKey, layout) {
   const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
   const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
 
-  const prompt = `Você é um especialista em renderização de acabamentos de interiores.
-Imagem 1: foto real de um espaço (parede ou piso) que vai receber um revestimento.
-Imagem 2: foto real do tile/revestimento que deve ser aplicado — use-a como referência literal de cor, textura e padrão, não invente outro tile.
-Tarefa: gere uma nova versão fotorrealista da Imagem 1 com a superfície coberta pelo tile da Imagem 2, respeitando a perspectiva original da foto, incluindo distorções de superfícies tortas ou fora de esquadro.
-Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com linhas de rejunte finas e realistas.
-Mantenha todos os outros elementos da foto original (piso, teto, box, metais, iluminação, enquadramento) inalterados. Não adicione elementos que não estavam na foto original.`;
+  const prompt = `Tarefa de edição de imagem fotorrealista — siga com precisão literal, sem liberdade criativa.
+
+Imagem 1 = a foto do espaço original (parede/piso).
+Imagem 2 = a foto real do tile a ser aplicado.
+
+Regra mais importante: a cor, o tom, a textura e o padrão do tile na imagem final DEVEM ser idênticos à Imagem 2 — não aproxime, não substitua por um tile "parecido" ou "genérico", não escureça nem estilize. Se a Imagem 2 mostra uma cor específica (por exemplo cinza claro, bege, com um padrão específico como bolinhas, listras, mármore etc.), essa MESMA cor e padrão devem aparecer na parede/piso final, peça por peça.
+
+Gere a Imagem 1 com a superfície completamente coberta por esse tile (Imagem 2), mantendo a perspectiva exata, o enquadramento, a iluminação e todos os outros elementos da foto original (móveis, porta, TV, objetos, teto, chão não revestido) inalterados. Não invente elementos que não estavam na foto.
+
+Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com linhas de rejunte finas e realistas.`;
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
