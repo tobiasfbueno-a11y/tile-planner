@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -18,7 +18,9 @@ function goTo(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   const idx = steps.indexOf(id);
-  document.getElementById('stepTag').textContent = `${idx + 1} / ${steps.length}`;
+  document.querySelectorAll('#progressGrout .seg').forEach((seg, i) => {
+    seg.classList.toggle('filled', i <= idx);
+  });
   window.scrollTo(0, 0);
 }
 
@@ -470,16 +472,24 @@ async function generateTiledImage(apiKey, layout) {
   const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
   const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
 
+  // Grab the already-computed layout diagram as a reference image so the
+  // model can copy the exact grid/offset instead of guessing from text —
+  // this was previously ignoring the chosen pattern and defaulting to straight.
+  const diagramCanvas = document.getElementById('layoutCanvas');
+  const diagramDataUrl = diagramCanvas.toDataURL('image/png');
+
   const prompt = `Tarefa de edição de imagem fotorrealista — siga com precisão literal, sem liberdade criativa.
 
 Imagem 1 = a foto do espaço original (parede/piso).
 Imagem 2 = a foto real do tile a ser aplicado.
+Imagem 3 = o diagrama exato do layout de instalação (linhas de rejunte e deslocamento entre fileiras) que você DEVE reproduzir — não é decoração, é a grade literal a copiar.
 
-Regra mais importante: a cor, o tom, a textura e o padrão do tile na imagem final DEVEM ser idênticos à Imagem 2 — não aproxime, não substitua por um tile "parecido" ou "genérico", não escureça nem estilize. Se a Imagem 2 mostra uma cor específica (por exemplo cinza claro, bege, com um padrão específico como bolinhas, listras, mármore etc.), essa MESMA cor e padrão devem aparecer na parede/piso final, peça por peça.
+Regras, na ordem de importância:
+1. O PADRÃO da grade de rejunte na imagem final deve seguir exatamente a Imagem 3: ${patternLabel}. Se a Imagem 3 mostra fileiras deslocadas horizontalmente entre si, a imagem final também precisa mostrar esse deslocamento — NÃO gere uma grade reta se a Imagem 3 não é reta.
+2. A cor, o tom, a textura e o padrão do tile devem ser idênticos à Imagem 2 — não aproxime, não substitua por um tile "parecido" ou genérico.
+3. Mantenha a perspectiva, o enquadramento, a iluminação e todos os outros elementos da foto original (móveis, porta, TV, objetos, teto, chão não revestido) inalterados. Não invente elementos que não estavam na foto.
 
-Gere a Imagem 1 com a superfície completamente coberta por esse tile (Imagem 2), mantendo a perspectiva exata, o enquadramento, a iluminação e todos os outros elementos da foto original (móveis, porta, TV, objetos, teto, chão não revestido) inalterados. Não invente elementos que não estavam na foto.
-
-Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com linhas de rejunte finas e realistas.`;
+Aplique os tiles orientados ${orientationLabel}, cobrindo toda a superfície, com linhas de rejunte finas e realistas seguindo o deslocamento exato da Imagem 3.`;
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -496,6 +506,7 @@ Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layo
           { type: 'text', text: prompt },
           { type: 'image_url', image_url: { url: state.wallDataUrl } },
           { type: 'image_url', image_url: { url: state.tileDataUrl } },
+          { type: 'image_url', image_url: { url: diagramDataUrl } },
         ],
       }],
     }),

@@ -27,6 +27,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
 }
 
 h1, h2, h3 {
@@ -73,6 +74,28 @@ header.app-header .step-tag {
   border-radius: 20px;
 }
 
+/* Progress bar styled as grout lines between tiles: each segment "fills"
+   like a tile setting in as you move through the wizard steps. */
+.progress-grout {
+  display: flex;
+  gap: 3px;
+  padding: 0 20px 10px;
+  background: var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 9;
+}
+.progress-grout .seg {
+  flex: 1;
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  transition: background .25s ease;
+}
+.progress-grout .seg.filled {
+  background: var(--grout);
+}
+
 main {
   flex: 1;
   padding: 20px;
@@ -108,6 +131,7 @@ main {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 20px -12px rgba(0,0,0,0.6);
 }
 
 .photo-slot {
@@ -195,11 +219,16 @@ fieldset {
   font-weight: 600;
   font-family: 'Inter', sans-serif;
   cursor: pointer;
-  transition: transform .1s ease, opacity .15s ease;
+  transition: transform .1s ease, opacity .15s ease, box-shadow .15s ease;
+  letter-spacing: 0.01em;
 }
 .btn:active { transform: scale(0.98); }
-.btn-primary { background: var(--glaze); color: var(--ink); }
-.btn-primary:disabled { opacity: 0.4; }
+.btn-primary {
+  background: linear-gradient(180deg, var(--glaze-bright), var(--glaze));
+  color: var(--ink);
+  box-shadow: 0 4px 14px -4px rgba(62,124,122,0.5);
+}
+.btn-primary:disabled { opacity: 0.4; box-shadow: none; }
 .btn-secondary { background: transparent; border: 1px solid var(--line); color: var(--porcelain); }
 .btn-row { display: flex; gap: 10px; }
 .btn-row .btn { flex: 1; }
