@@ -16,7 +16,7 @@
 <body>
 
 <header class="app-header">
-  <h1>🟦 Tile Planner <span id="appVersion" class="version-tag"></span></h1>
+  <h1><span class="logo-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span> Tile Planner <span id="appVersion" class="version-tag"></span></h1>
   <div style="display:flex; align-items:center; gap:8px;">
     <button id="forceUpdateBtn" class="settings-link" title="Força buscar a versão mais nova, ignorando cache">🔄 Atualizar</button>
   </div>
@@ -64,6 +64,24 @@
         <div class="toggle-row">
           <span>Superfície irregular / fora de esquadro</span>
           <button class="switch" id="crookedToggle"></button>
+        </div>
+
+        <div class="note-box" style="margin-top:14px;">Como instalador, você decide onde ficam as peças inteiras — o corte fica sempre do lado que menos importa (perto de porta, canto escondido, embaixo de armário/máquina).</div>
+        <div class="grid-2" style="margin-top:10px;">
+          <label class="field">Peça inteira encostada em
+            <select id="horizAnchor">
+              <option value="center">Centralizado (corte igual dos 2 lados)</option>
+              <option value="left">Parede/lado esquerdo</option>
+              <option value="right">Parede/lado direito</option>
+            </select>
+          </label>
+          <label class="field">Peça inteira encostada em
+            <select id="vertAnchor">
+              <option value="center">Centralizado (corte igual cima/baixo)</option>
+              <option value="bottom">Chão / base</option>
+              <option value="top">Topo / teto</option>
+            </select>
+          </label>
         </div>
 
         <div id="crookedFields" style="display:none;">

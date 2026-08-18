@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v14';
+const APP_VERSION = 'v15';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -173,6 +173,32 @@ function centeredSplit(total, unit, minCut) {
   return { n, rem, edge };
 }
 
+// Like centeredSplit, but lets the installer pick which side gets the full
+// (uncut) tile — e.g. flush against the main wall/floor — instead of always
+// splitting the leftover evenly on both edges. anchor: 'start' = full tiles
+// begin at position 0 (cut lands at the far edge), 'end' = full tiles are
+// flush with the far edge (cut lands at position 0), 'center' = old behavior.
+function anchoredSplit(total, unit, minCut, anchor) {
+  if (anchor === 'center') {
+    const c = centeredSplit(total, unit, minCut);
+    return { n: c.n, rem: c.rem, edgeStart: c.edge, edgeEnd: c.edge, anchor };
+  }
+  let n = Math.floor(total / unit);
+  let rem = +(total - n * unit).toFixed(3);
+  let guard = 0;
+  while (rem > 0.01 && rem < minCut && n > 0 && guard < 20) {
+    n -= 1;
+    rem = +(total - n * unit).toFixed(3);
+    guard++;
+  }
+  return {
+    n, rem,
+    edgeStart: anchor === 'end' ? rem : 0,
+    edgeEnd: anchor === 'start' ? rem : 0,
+    anchor,
+  };
+}
+
 function computeLayout() {
   const wallWidth = parseFloat(document.getElementById('wallWidth').value);
   let wallHeight = parseFloat(document.getElementById('wallHeight').value);
@@ -181,6 +207,8 @@ function computeLayout() {
   const groutIn = parseFloat(document.getElementById('groutWidth').value) || 0.125;
   const orientation = document.getElementById('tileOrientation').value; // horizontal | vertical | diamond
   const pattern = document.getElementById('tilePattern').value; // straight | brick | third | thirdMirrored
+  const horizAnchor = document.getElementById('horizAnchor').value; // left | right | center
+  const vertAnchor = document.getElementById('vertAnchor').value; // bottom | top | center
 
   let corners = null;
   let heightVariation = 0;
@@ -220,27 +248,36 @@ function computeLayout() {
   }
 
   // Vertical (row) split is the same regardless of horizontal pattern offset.
-  const rowSplit = centeredSplit(wallHeight, effH, MIN_CUT_IN);
+  // vertAnchor: 'bottom' = full tiles flush with the floor (cut lands at the
+  // top); 'top' = flush with the ceiling (cut at the floor); 'center' = old
+  // symmetric behavior.
+  const vertAnchorNorm = vertAnchor === 'bottom' ? 'start' : vertAnchor === 'top' ? 'end' : 'center';
+  const rowSplit = anchoredSplit(wallHeight, effH, MIN_CUT_IN, vertAnchorNorm);
   const rowsFull = rowSplit.n;
   const remH = rowSplit.rem;
-  const edgeCutH = rowSplit.edge;
+  const edgeCutHStart = rowSplit.edgeStart; // at the floor
+  const edgeCutHEnd = rowSplit.edgeEnd;     // at the ceiling/top
   const hasHorizontalCut = remH > 0.05;
-  const totalRows = rowsFull + (hasHorizontalCut ? 2 : 0);
+  const totalRows = rowsFull + (edgeCutHStart > 0.05 ? 1 : 0) + (edgeCutHEnd > 0.05 ? 1 : 0);
 
-  let colsFull, remW, edgeCutW, hasVerticalCut, totalCols, totalTiles, colsRange = null;
+  let colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, totalCols, totalTiles, colsRange = null;
 
   if (pattern === 'straight' || diagonalMode) {
-    // Centered grid: cuts split evenly on both edges, same for every row.
-    const colSplit = centeredSplit(wallWidth, effW, MIN_CUT_IN);
+    // horizAnchor: 'left'/'right' flush a full tile against that wall; the
+    // cut lands on the opposite side. 'center' splits the leftover evenly.
+    const horizAnchorNorm = horizAnchor === 'left' ? 'start' : horizAnchor === 'right' ? 'end' : 'center';
+    const colSplit = anchoredSplit(wallWidth, effW, MIN_CUT_IN, horizAnchorNorm);
     colsFull = colSplit.n;
     remW = colSplit.rem;
-    edgeCutW = colSplit.edge;
+    edgeCutWStart = colSplit.edgeStart; // left side
+    edgeCutWEnd = colSplit.edgeEnd;     // right side
     hasVerticalCut = remW > 0.05;
-    totalCols = colsFull + (hasVerticalCut ? 2 : 0);
+    totalCols = colsFull + (edgeCutWStart > 0.05 ? 1 : 0) + (edgeCutWEnd > 0.05 ? 1 : 0);
     totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
   } else {
     // Running-bond style patterns: each row is offset horizontally, so the
-    // cut pieces land in different spots row to row. Compute row by row.
+    // cut pieces land in different spots row to row — the pattern itself
+    // dictates where cuts fall, so horizAnchor doesn't apply here.
     const rowsCount = Math.max(totalRows, 1);
     let minCols = Infinity, maxCols = -Infinity, sumCols = 0;
     for (let r = 0; r < rowsCount; r++) {
@@ -252,21 +289,23 @@ function computeLayout() {
     }
     colsFull = Math.floor(wallWidth / effW);
     remW = +(wallWidth - colsFull * effW).toFixed(2);
-    edgeCutW = +(remW / 2).toFixed(2);
+    edgeCutWStart = +(remW / 2).toFixed(2);
+    edgeCutWEnd = edgeCutWStart;
     hasVerticalCut = true; // offset patterns virtually always produce edge cuts somewhere
     totalCols = maxCols;
     colsRange = minCols === maxCols ? `${minCols}` : `${minCols}–${maxCols}`;
     totalTiles = sumCols;
   }
 
-  const thinSliverWarning = (hasVerticalCut && edgeCutW > 0 && edgeCutW < MIN_CUT_IN - 0.01) ||
-                             (hasHorizontalCut && edgeCutH < MIN_CUT_IN - 0.01);
+  const smallestVertCut = Math.min(...[edgeCutWStart, edgeCutWEnd].filter(v => v > 0.05), Infinity);
+  const smallestHorizCut = Math.min(...[edgeCutHStart, edgeCutHEnd].filter(v => v > 0.05), Infinity);
+  const thinSliverWarning = smallestVertCut < MIN_CUT_IN - 0.01 || smallestHorizCut < MIN_CUT_IN - 0.01;
 
   return {
     wallWidth, wallHeight, tileW, tileH, groutIn,
-    orientation, pattern, diagonalMode,
-    colsFull, remW, edgeCutW, hasVerticalCut, colsRange,
-    rowsFull, remH, edgeCutH, hasHorizontalCut,
+    orientation, pattern, diagonalMode, horizAnchor, vertAnchor,
+    colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, colsRange,
+    rowsFull, remH, edgeCutHStart, edgeCutHEnd, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
     thinSliverWarning, corners, heightVariation,
     effW, effH,
@@ -335,11 +374,11 @@ function drawLayout(layout) {
   // "course" in the offset cycle — they inherit the offset of the full-tile
   // course right next to them, so the vertical grout joints line up
   // continuously across the seam instead of jumping to a different offset.
-  const hc = layout.hasHorizontalCut;
+  // Only the sides that actually have a cut (per vertAnchor) get a row.
   const rowsBU = [];
-  if (hc) rowsBU.push({ height: layout.edgeCutH, edge: true, courseIdx: 0 });
+  if (layout.edgeCutHStart > 0.05) rowsBU.push({ height: layout.edgeCutHStart, edge: true, courseIdx: 0 });
   for (let i = 0; i < layout.rowsFull; i++) rowsBU.push({ height: layout.tileH, edge: false, courseIdx: i });
-  if (hc) rowsBU.push({ height: layout.edgeCutH, edge: true, courseIdx: Math.max(layout.rowsFull - 1, 0) });
+  if (layout.edgeCutHEnd > 0.05) rowsBU.push({ height: layout.edgeCutHEnd, edge: true, courseIdx: Math.max(layout.rowsFull - 1, 0) });
 
   let y = 0;
   for (let idx = rowsBU.length - 1; idx >= 0; idx--) {
@@ -350,9 +389,9 @@ function drawLayout(layout) {
     let colWidths;
     if (layout.pattern === 'straight' || layout.diagonalMode) {
       colWidths = [];
-      if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
+      if (layout.edgeCutWStart > 0.05) colWidths.push({ width: layout.edgeCutWStart, cut: true });
       for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
-      if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
+      if (layout.edgeCutWEnd > 0.05) colWidths.push({ width: layout.edgeCutWEnd, cut: true });
     } else {
       const offset = rowOffset(layout.pattern, row.courseIdx, layout.effW);
       colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
@@ -375,15 +414,41 @@ function drawLayout(layout) {
 }
 
 // ---------- Installation start-point guide ----------
-// Plain, no-decisions-required instructions: exact snap-line distances from
-// two fixed references (floor and right wall) — the app picks the
-// reference, the installer just measures and marks.
+// Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
+// reference always follows vertAnchor. The vertical (side-wall) reference
+// follows horizAnchor for the straight pattern; offset patterns (brick/1-3)
+// keep measuring from the right wall, since the running pattern itself
+// dictates where the cut falls.
 function buildInstallGuide(layout) {
   if (layout.diagonalMode) {
     return `<p><strong>Linha central (45°):</strong> marque uma linha cruzando o espaço na diagonal, passando pelo centro. Comece a colocar os tiles a partir dela, alinhando os dois sentidos.</p>`;
   }
 
-  const rowTypeCount = { straight: 1, brick: 2, third: 3, thirdMirrored: 2 }[layout.pattern];
+  let html;
+  if (layout.edgeCutHStart > 0.05) {
+    html = `<p><strong>Linha 1 (horizontal, a partir do chão):</strong> ${layout.edgeCutHStart}". Essa é a base — as próximas fileiras sobem a cada ${layout.effH.toFixed(2)}".</p>`;
+  } else {
+    html = `<p><strong>Linha 1 (horizontal):</strong> peça inteira encostada direto no chão, sem corte na base. As próximas fileiras sobem a cada ${layout.effH.toFixed(2)}".</p>`;
+  }
+
+  if (layout.pattern === 'straight') {
+    if (layout.horizAnchor === 'left') {
+      html += layout.edgeCutWEnd > 0.05
+        ? `<p><strong>Linha vertical:</strong> peça inteira encostada na parede esquerda. O corte de ${layout.edgeCutWEnd}" fica na lateral direita.</p>`
+        : `<p><strong>Linha vertical:</strong> peças inteiras de ponta a ponta — a largura fecha exata, sem corte lateral.</p>`;
+    } else if (layout.horizAnchor === 'right') {
+      html += layout.edgeCutWStart > 0.05
+        ? `<p><strong>Linha vertical:</strong> peça inteira encostada na parede direita. O corte de ${layout.edgeCutWStart}" fica na lateral esquerda.</p>`
+        : `<p><strong>Linha vertical:</strong> peças inteiras de ponta a ponta — a largura fecha exata, sem corte lateral.</p>`;
+    } else {
+      html += layout.edgeCutWStart > 0.05
+        ? `<p><strong>Linha vertical:</strong> ${layout.edgeCutWStart}" de corte em cada lateral (esquerda e direita), peças inteiras no meio.</p>`
+        : `<p><strong>Linha vertical:</strong> peças inteiras de ponta a ponta — a largura fecha exata, sem corte lateral.</p>`;
+    }
+    return html;
+  }
+
+  const rowTypeCount = { brick: 2, third: 3, thirdMirrored: 2 }[layout.pattern];
   const rowDistances = [];
   for (let t = 0; t < rowTypeCount; t++) {
     const offset = rowOffset(layout.pattern, t, layout.effW);
@@ -393,12 +458,8 @@ function buildInstallGuide(layout) {
     rowDistances.push(distFromRight);
   }
 
-  let html = `<p><strong>Linha 1 (horizontal, a partir do chão):</strong> ${layout.edgeCutH}". Essa é a base — as próximas fileiras sobem a cada ${layout.effH.toFixed(2)}".</p>`;
-
-  html += `<p><strong>Linha(s) vertical(is), a partir da parede direita:</strong></p><ul style="padding-left:20px; margin:6px 0;">`;
-  if (rowTypeCount === 1) {
-    html += `<li>Todas as fileiras: ${rowDistances[0]}"</li>`;
-  } else if (rowTypeCount === 2) {
+  html += `<p><strong>Linha(s) vertical(is), a partir da parede direita</strong> (padrões com deslocamento sempre usam a parede direita como referência — a "peça inteira encostada em" do passo 2 não se aplica aqui):</p><ul style="padding-left:20px; margin:6px 0;">`;
+  if (rowTypeCount === 2) {
     html += `<li>Fileira 1, 3, 5...: ${rowDistances[0]}"</li>`;
     html += `<li>Fileira 2, 4, 6...: ${rowDistances[1]}"</li>`;
   } else {
@@ -436,9 +497,19 @@ async function runCalculation() {
       note += `Os tiles encaixam perfeitamente na largura e altura do espaço, sem cortes.`;
     } else {
       const parts = [];
-      if (layout.hasVerticalCut) parts.push(`cortes de ${layout.edgeCutW}" nas bordas laterais (esquerda e direita)`);
-      if (layout.hasHorizontalCut) parts.push(`cortes de ${layout.edgeCutH}" nas bordas de cima e baixo`);
-      note += `Layout centralizado: ` + parts.join(' e ') + `. Os cortes ficam iguais dos dois lados, o que fica visualmente mais equilibrado do que jogar a sobra toda para um lado só.`;
+      if (layout.horizAnchor === 'center' && layout.hasVerticalCut) {
+        parts.push(`cortes de ${layout.edgeCutWStart}" iguais nas duas laterais`);
+      } else if (layout.hasVerticalCut) {
+        const side = layout.horizAnchor === 'left' ? 'direita' : 'esquerda';
+        parts.push(`corte de ${(layout.edgeCutWStart || layout.edgeCutWEnd).toFixed(2)}" só na lateral ${side} (peça inteira encostada na parede ${layout.horizAnchor === 'left' ? 'esquerda' : 'direita'})`);
+      }
+      if (layout.vertAnchor === 'center' && layout.hasHorizontalCut) {
+        parts.push(`cortes de ${layout.edgeCutHStart}" iguais em cima e embaixo`);
+      } else if (layout.hasHorizontalCut) {
+        const side = layout.vertAnchor === 'bottom' ? 'no topo' : 'na base';
+        parts.push(`corte de ${(layout.edgeCutHStart || layout.edgeCutHEnd).toFixed(2)}" só ${side} (peça inteira encostada n${layout.vertAnchor === 'bottom' ? 'o chão' : 'o topo'})`);
+      }
+      note += parts.join(' e ') + `.`;
     }
   } else {
     note += `Cada fileira é deslocada horizontalmente (offset), então os cortes aparecem em pontos diferentes fileira a fileira — normal nesse tipo de padrão. O número de colunas varia entre ${layout.colsRange} por fileira.`;
