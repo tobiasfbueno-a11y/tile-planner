@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tile-planner-v9';
+const CACHE_NAME = 'tile-planner-v10';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.png'];
 
 self.addEventListener('install', (event) => {
@@ -18,8 +18,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Never cache API calls to Google
-  if (event.request.url.includes('generativelanguage.googleapis.com')) return;
+  // Never cache API calls to OpenRouter
+  if (event.request.url.includes('openrouter.ai')) return;
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
