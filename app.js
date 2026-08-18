@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -110,16 +110,32 @@ document.getElementById('toStep3').addEventListener('click', () => {
   goTo('screen-tile');
 });
 
+document.getElementById('skipTilePhoto').addEventListener('change', (e) => {
+  const skip = e.target.checked;
+  document.getElementById('tilePhotoBlock').style.display = skip ? 'none' : 'block';
+  if (skip) {
+    state.tileFile = null;
+    state.tileDataUrl = null;
+  }
+  checkStep3Ready();
+});
+
 ['tileWidth', 'tileHeight'].forEach(id => {
   document.getElementById(id).addEventListener('input', checkStep3Ready);
 });
 function checkStep3Ready() {
   const tw = parseFloat(document.getElementById('tileWidth').value);
   const th = parseFloat(document.getElementById('tileHeight').value);
-  document.getElementById('toStep4').disabled = !(tw && th && state.tileDataUrl);
+  const skip = document.getElementById('skipTilePhoto').checked;
+  document.getElementById('toStep4').disabled = !(tw && th && (skip || state.tileDataUrl));
 }
 
 document.getElementById('toStep4').addEventListener('click', () => {
+  if (document.getElementById('skipTilePhoto').checked) {
+    goTo('screen-result');
+    runCalculation();
+    return;
+  }
   const saved = localStorage.getItem('openrouter_api_key');
   if (saved) document.getElementById('apiKey').value = saved;
   goTo('screen-key');
@@ -315,15 +331,21 @@ function drawLayout(layout) {
   if (layout.diagonalMode) ctx.rotate(Math.PI / 4);
   ctx.translate(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2);
 
-  const rowHeights = [];
-  if (layout.hasHorizontalCut) rowHeights.push(layout.edgeCutH);
-  for (let i = 0; i < layout.rowsFull; i++) rowHeights.push(layout.tileH);
-  if (layout.hasHorizontalCut) rowHeights.push(layout.edgeCutH);
+  // Build rows bottom-to-top. Edge (height-cut) rows are NOT their own
+  // "course" in the offset cycle — they inherit the offset of the full-tile
+  // course right next to them, so the vertical grout joints line up
+  // continuously across the seam instead of jumping to a different offset.
+  const hc = layout.hasHorizontalCut;
+  const rowsBU = [];
+  if (hc) rowsBU.push({ height: layout.edgeCutH, edge: true, courseIdx: 0 });
+  for (let i = 0; i < layout.rowsFull; i++) rowsBU.push({ height: layout.tileH, edge: false, courseIdx: i });
+  if (hc) rowsBU.push({ height: layout.edgeCutH, edge: true, courseIdx: Math.max(layout.rowsFull - 1, 0) });
 
   let y = 0;
-  for (let r = 0; r < rowHeights.length; r++) {
-    const rh = rowHeights[r];
-    const isCutRow = layout.hasHorizontalCut && (r === 0 || r === rowHeights.length - 1);
+  for (let idx = rowsBU.length - 1; idx >= 0; idx--) {
+    const row = rowsBU[idx];
+    const rh = row.height;
+    const isCutRow = row.edge;
 
     let colWidths;
     if (layout.pattern === 'straight' || layout.diagonalMode) {
@@ -332,11 +354,7 @@ function drawLayout(layout) {
       for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
       if (layout.hasVerticalCut) colWidths.push({ width: layout.edgeCutW, cut: true });
     } else {
-      // Row offset patterns are counted bottom-up (course 0 = bottom-most
-      // row), matching how the install guide numbers them — not top-down
-      // drawing order.
-      const courseFromBottom = rowHeights.length - 1 - r;
-      const offset = rowOffset(layout.pattern, courseFromBottom, layout.effW);
+      const offset = rowOffset(layout.pattern, row.courseIdx, layout.effW);
       colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
     }
 
@@ -357,12 +375,12 @@ function drawLayout(layout) {
 }
 
 // ---------- Installation start-point guide ----------
-// Tells the installer exactly where to snap chalk lines, measured from the
-// right wall (horizontal) and the floor/back reference (vertical) — always
-// using the straightest side as the reference point, per the user's request.
+// Plain, no-decisions-required instructions: exact snap-line distances from
+// two fixed references (floor and right wall) — the app picks the
+// reference, the installer just measures and marks.
 function buildInstallGuide(layout) {
   if (layout.diagonalMode) {
-    return `<p>Layout diamante: em vez de medidas lineares, marque uma linha central cruzando o espaço a 45°, passando pelo ponto médio. A partir dela, alinhe os tiles nos dois sentidos. Recomendo confirmar esse ponto de partida com quem for instalar, já que o corte nas bordas exige ajuste fino peça a peça.</p>`;
+    return `<p><strong>Linha central (45°):</strong> marque uma linha cruzando o espaço na diagonal, passando pelo centro. Comece a colocar os tiles a partir dela, alinhando os dois sentidos.</p>`;
   }
 
   const rowTypeCount = { straight: 1, brick: 2, third: 3, thirdMirrored: 2 }[layout.pattern];
@@ -375,20 +393,20 @@ function buildInstallGuide(layout) {
     rowDistances.push(distFromRight);
   }
 
-  let html = `<p><strong>Linha horizontal inicial (base):</strong> meça ${layout.edgeCutH}" a partir do fundo/chão — essa é a primeira linha de rejunte horizontal. As fileiras seguintes sobem a cada ${layout.effH.toFixed(2)}" (tile + rejunte).</p>`;
+  let html = `<p><strong>Linha 1 (horizontal, a partir do chão):</strong> ${layout.edgeCutH}". Essa é a base — as próximas fileiras sobem a cada ${layout.effH.toFixed(2)}".</p>`;
 
-  html += `<p><strong>Linha(s) vertical(is) — a partir da parede direita:</strong></p><ul style="padding-left:20px; margin:6px 0;">`;
+  html += `<p><strong>Linha(s) vertical(is), a partir da parede direita:</strong></p><ul style="padding-left:20px; margin:6px 0;">`;
   if (rowTypeCount === 1) {
-    html += `<li>Todas as fileiras: ${rowDistances[0]}" da parede direita até a borda do primeiro tile inteiro.</li>`;
+    html += `<li>Todas as fileiras: ${rowDistances[0]}"</li>`;
   } else if (rowTypeCount === 2) {
-    html += `<li>Fileiras 1, 3, 5... (contando de baixo pra cima): ${rowDistances[0]}" da parede direita.</li>`;
-    html += `<li>Fileiras 2, 4, 6...: ${rowDistances[1]}" da parede direita.</li>`;
+    html += `<li>Fileira 1, 3, 5...: ${rowDistances[0]}"</li>`;
+    html += `<li>Fileira 2, 4, 6...: ${rowDistances[1]}"</li>`;
   } else {
-    html += `<li>Fileiras 1, 4, 7...: ${rowDistances[0]}" da parede direita.</li>`;
-    html += `<li>Fileiras 2, 5, 8...: ${rowDistances[1]}" da parede direita.</li>`;
-    html += `<li>Fileiras 3, 6, 9...: ${rowDistances[2]}" da parede direita.</li>`;
+    html += `<li>Fileira 1, 4, 7...: ${rowDistances[0]}"</li>`;
+    html += `<li>Fileira 2, 5, 8...: ${rowDistances[1]}"</li>`;
+    html += `<li>Fileira 3, 6, 9...: ${rowDistances[2]}"</li>`;
   }
-  html += `</ul><p style="margin-top:6px;">Sempre meça a partir da parede/lado mais reto do espaço — se as paredes forem irregulares, use o lado que ficou mais próximo do esquadro como sua referência de verdade, e não confie nas outras paredes tortas para alinhar.</p>`;
+  html += `</ul>`;
 
   return html;
 }

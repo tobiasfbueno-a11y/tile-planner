@@ -94,12 +94,17 @@
       <h2>Foto do revestimento</h2>
       <p>Foto de perto do tile/azulejo (uma peça ou uma amostra), bem iluminada, sem sombra forte.</p>
     </div>
-    <div class="photo-slot" id="tileSlot" tabindex="0">
-      <div class="placeholder"><span class="icon">🧱</span>Toque para tirar ou escolher a foto</div>
+    <label class="check-row" style="margin-bottom:12px;">
+      <input type="checkbox" id="skipTilePhoto">
+      <span>Só quero ver o layout/diagrama — sem gerar imagem com IA (não vou enviar foto do revestimento)</span>
+    </label>
+    <div id="tilePhotoBlock">
+      <div class="photo-slot" id="tileSlot" tabindex="0">
+        <div class="placeholder"><span class="icon">🧱</span>Toque para tirar ou escolher a foto</div>
+      </div>
+      <input type="file" id="tileInput" accept="image/*" capture="environment">
     </div>
-    <input type="file" id="tileInput" accept="image/*" capture="environment">
-    <div class="card">
-      <div class="grid-2">
+    <div class="card">      <div class="grid-2">
         <label class="field">Largura do tile (pol)
           <input type="number" inputmode="decimal" id="tileWidth" placeholder="ex: 12">
         </label>
@@ -107,8 +112,16 @@
           <input type="number" inputmode="decimal" id="tileHeight" placeholder="ex: 24">
         </label>
       </div>
-      <label class="field" style="margin-top:12px;">Espessura do rejunte (pol)
-        <input type="number" inputmode="decimal" id="groutWidth" value="0.125" step="0.0625">
+      <label class="field" style="margin-top:12px;">Espessura do rejunte
+        <select id="groutWidth">
+          <option value="0.0625">1/16"</option>
+          <option value="0.125" selected>1/8" (mais comum)</option>
+          <option value="0.1875">3/16"</option>
+          <option value="0.25">1/4"</option>
+          <option value="0.3125">5/16"</option>
+          <option value="0.375">3/8"</option>
+          <option value="0.5">1/2"</option>
+        </select>
       </label>
 
       <label class="field" style="margin-top:12px;">Orientação do tile

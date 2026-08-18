@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tile-planner-v13';
+const CACHE_NAME = 'tile-planner-v14';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.png'];
 
 self.addEventListener('install', (event) => {
