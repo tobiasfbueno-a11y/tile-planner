@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v8';
+const APP_VERSION = 'v9';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -118,14 +118,14 @@ function checkStep3Ready() {
 }
 
 document.getElementById('toStep4').addEventListener('click', () => {
-  const saved = localStorage.getItem('pollinations_api_key');
+  const saved = localStorage.getItem('gemini_api_key');
   if (saved) document.getElementById('apiKey').value = saved;
   goTo('screen-key');
 });
 
 document.getElementById('toStep5').addEventListener('click', () => {
   const key = document.getElementById('apiKey').value.trim();
-  if (key) localStorage.setItem('pollinations_api_key', key);
+  if (key) localStorage.setItem('gemini_api_key', key);
   goTo('screen-result');
   runCalculation();
 });
@@ -434,7 +434,7 @@ async function runCalculation() {
   document.getElementById('resultSubtitle').textContent = 'Aqui está a distribuição calculada:';
 
   // Try AI image generation (optional — degrade gracefully if no key or fails)
-  const apiKey = localStorage.getItem('pollinations_api_key');
+  const apiKey = localStorage.getItem('gemini_api_key');
   if (apiKey && state.wallDataUrl && state.tileDataUrl) {
     document.getElementById('loadingBox').style.display = 'flex';
     try {
@@ -450,38 +450,41 @@ async function runCalculation() {
   document.getElementById('loadingBox').style.display = 'none';
 }
 
-// ---------- Pollinations.ai image editing (free tier) ----------
-function dataUrlToBlob(dataUrl) {
-  const [header, base64] = dataUrl.split(',');
-  const mime = header.substring(5, header.indexOf(';'));
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
-
+// ---------- Gemini image editing (paid tier — billing must be enabled) ----------
 async function generateTiledImage(apiKey, layout) {
   const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
   const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
 
-  const prompt = `Imagem 1: foto real de um espaço (parede ou piso) de banheiro.
-Imagem 2: foto real de um tile/revestimento que deve ser aplicado nesse espaço.
-Gere uma versão fotorrealista da Imagem 1 com a superfície completamente coberta pelo padrão, cor e textura exatos da Imagem 2 — use a Imagem 2 como referência literal, não invente outro tile.
-Respeite a perspectiva original da foto, incluindo superfícies tortas ou fora de esquadro.
+  const wallBase64 = state.wallDataUrl.split(',')[1];
+  const tileBase64 = state.tileDataUrl.split(',')[1];
+  const wallMime = state.wallDataUrl.substring(5, state.wallDataUrl.indexOf(';'));
+  const tileMime = state.tileDataUrl.substring(5, state.tileDataUrl.indexOf(';'));
+
+  const prompt = `Você é um especialista em renderização de acabamentos de interiores.
+Imagem 1: foto real de um espaço (parede ou piso) que vai receber um revestimento.
+Imagem 2: foto real do tile/revestimento que deve ser aplicado — use-a como referência literal de cor, textura e padrão, não invente outro tile.
+Tarefa: gere uma nova versão fotorrealista da Imagem 1 com a superfície coberta pelo tile da Imagem 2, respeitando a perspectiva original da foto, incluindo distorções de superfícies tortas ou fora de esquadro.
 Aplique os tiles orientados ${orientationLabel}, ${patternLabel}, usando um layout com aproximadamente ${layout.totalCols} colunas e ${layout.totalRows} linhas, com linhas de rejunte finas e realistas.
-Mantenha todo o resto da foto original (piso, teto, box, metais, iluminação, enquadramento) inalterado. Não adicione elementos que não estavam na foto original.`;
+Mantenha todos os outros elementos da foto original (piso, teto, box, metais, iluminação, enquadramento) inalterados. Não adicione elementos que não estavam na foto original.`;
 
-  const form = new FormData();
-  form.append('image', dataUrlToBlob(state.wallDataUrl), 'espaco.jpg');
-  form.append('image', dataUrlToBlob(state.tileDataUrl), 'tile.jpg');
-  form.append('prompt', prompt);
-  form.append('model', 'nanobanana');
+  const body = {
+    contents: [{
+      parts: [
+        { text: prompt },
+        { inline_data: { mime_type: wallMime, data: wallBase64 } },
+        { inline_data: { mime_type: tileMime, data: tileBase64 } },
+      ]
+    }]
+  };
 
-  const resp = await fetch('https://gen.pollinations.ai/v1/images/edits', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -489,11 +492,11 @@ Mantenha todo o resto da foto original (piso, teto, box, metais, iluminação, e
   }
 
   const data = await resp.json();
-  const item = data?.data?.[0];
-  if (!item) throw new Error('a resposta não trouxe uma imagem');
-  if (item.url) return item.url;
-  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
-  throw new Error('formato de resposta inesperado');
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inline_data || p.inlineData);
+  if (!imgPart) throw new Error('a resposta não trouxe uma imagem');
+  const inline = imgPart.inline_data || imgPart.inlineData;
+  return `data:${inline.mime_type || inline.mimeType || 'image/png'};base64,${inline.data}`;
 }
 
 // ---------- Service worker (offline shell) ----------

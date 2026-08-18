@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tile-planner-v8';
+const CACHE_NAME = 'tile-planner-v9';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.png'];
 
 self.addEventListener('install', (event) => {
@@ -18,8 +18,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Never cache API calls to Pollinations
-  if (event.request.url.includes('pollinations.ai')) return;
+  // Never cache API calls to Google
+  if (event.request.url.includes('generativelanguage.googleapis.com')) return;
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
