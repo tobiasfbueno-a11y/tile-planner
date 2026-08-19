@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -486,11 +486,12 @@ function drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad) {
 // the measurement centered above/beside it. This is how the exact cut size
 // is marked on a piece — a line spanning the cut, not just a floating
 // number, so it's clear which dimension the number refers to.
-function drawDimensionMark(ctx, dpr, x1, y1, x2, y2, label, orientation, spanPx) {
+function drawDimensionMark(ctx, dpr, x1, y1, x2, y2, label, orientation, spanPx, sizeFactor) {
+  sizeFactor = sizeFactor || 1;
   ctx.save();
   ctx.strokeStyle = '#F3E9DE';
   ctx.lineWidth = dpr;
-  const tick = 6 * dpr;
+  const tick = 5 * dpr * sizeFactor;
 
   ctx.beginPath();
   ctx.moveTo(x1, y1);
@@ -506,7 +507,7 @@ function drawDimensionMark(ctx, dpr, x1, y1, x2, y2, label, orientation, spanPx)
 
   ctx.fillStyle = '#F3E9DE';
   ctx.textAlign = 'center';
-  let fontSize = Math.max(8 * dpr, tick * 1.6);
+  let fontSize = Math.max(7 * dpr, tick * 1.4) * sizeFactor;
   ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
   const maxTextW = Math.max(spanPx, 1);
   const w = ctx.measureText(label).width;
@@ -646,17 +647,20 @@ function drawLayout(layout) {
         ctx.clip();
 
         if (isCorner) {
-          // Cut in both directions: one horizontal tick-line for the width,
-          // one vertical tick-line for the height, each labeled separately.
-          if (cellW > 26 * dpr && cellH > 14 * dpr) {
+          // Cut in both directions: push each dimension line to hug a
+          // different edge of the cell (bottom edge for width, right edge
+          // for height) so they meet near the corner without crossing
+          // through the middle and colliding with each other.
+          const m = Math.min(cellW, cellH) * 0.16;
+          if (cellW > 30 * dpr && cellH > 20 * dpr) {
             drawDimensionMark(ctx, dpr,
-              cellX + margin, cellY + cellH * 0.72, cellX + cellW - margin, cellY + cellH * 0.72,
-              `${col.width.toFixed(1)}"`, 'horizontal', cellW - margin * 2);
+              cellX + m, cellY + cellH - m, cellX + cellW - m, cellY + cellH - m,
+              `${col.width.toFixed(1)}"`, 'horizontal', cellW - m * 2, 0.85);
           }
-          if (cellH > 26 * dpr && cellW > 14 * dpr) {
+          if (cellH > 30 * dpr && cellW > 20 * dpr) {
             drawDimensionMark(ctx, dpr,
-              cellX + cellW * 0.72, cellY + margin, cellX + cellW * 0.72, cellY + cellH - margin,
-              `${rh.toFixed(1)}"`, 'vertical', cellH - margin * 2);
+              cellX + cellW - m, cellY + m, cellX + cellW - m, cellY + cellH - m,
+              `${rh.toFixed(1)}"`, 'vertical', cellH - m * 2, 0.85);
           }
         } else if (isCutRow) {
           // Height-cut, full width: vertical tick-line.
