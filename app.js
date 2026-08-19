@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -380,15 +380,16 @@ function drawLayout(layout) {
   if (layout.diagonalMode) ctx.rotate(Math.PI / 4);
   ctx.translate(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2);
 
-  // Build rows bottom-to-top. Edge (height-cut) rows are NOT their own
-  // "course" in the offset cycle — they inherit the offset of the full-tile
-  // course right next to them, so the vertical grout joints line up
-  // continuously across the seam instead of jumping to a different offset.
-  // Only the sides that actually have a cut (per vertAnchor) get a row.
+  // Build rows bottom-to-top. Every row — cut or full — is a real course in
+  // the running-bond sequence and gets its own sequential courseIdx, so the
+  // offset keeps alternating right through a trimmed edge row instead of
+  // "flatlining" to match its full-tile neighbor. That's how running bond
+  // actually works on site: every course alternates, cut or not.
   const rowsBU = [];
-  if (layout.edgeCutHStart > 0.05) rowsBU.push({ height: layout.edgeCutHStart, edge: true, courseIdx: 0 });
-  for (let i = 0; i < layout.rowsFull; i++) rowsBU.push({ height: layout.tileH, edge: false, courseIdx: i });
-  if (layout.edgeCutHEnd > 0.05) rowsBU.push({ height: layout.edgeCutHEnd, edge: true, courseIdx: Math.max(layout.rowsFull - 1, 0) });
+  let courseSeq = 0;
+  if (layout.edgeCutHStart > 0.05) rowsBU.push({ height: layout.edgeCutHStart, edge: true, courseIdx: courseSeq++ });
+  for (let i = 0; i < layout.rowsFull; i++) rowsBU.push({ height: layout.tileH, edge: false, courseIdx: courseSeq++ });
+  if (layout.edgeCutHEnd > 0.05) rowsBU.push({ height: layout.edgeCutHEnd, edge: true, courseIdx: courseSeq++ });
 
   let y = 0;
   for (let idx = rowsBU.length - 1; idx >= 0; idx--) {
@@ -422,24 +423,45 @@ function drawLayout(layout) {
       if (isCut) {
         const cellW = col.width * scale;
         const cellH = rh * scale;
-        let label;
-        if (isCutRow && col.cut) label = `${col.width.toFixed(1)}"×${rh.toFixed(1)}"`; // corner: cut both ways
-        else if (isCutRow) label = `${rh.toFixed(1)}"`; // height-cut row, full-width piece
-        else label = `${col.width.toFixed(1)}"`; // width-cut piece, full height
-        ctx.save();
-        ctx.fillStyle = '#F3E9DE';
-        ctx.font = `${Math.max(9 * dpr, Math.min(cellW, cellH) * 0.22)}px 'JetBrains Mono', monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // Only draw if there's reasonable room, and clip to the cell so an
-        // oversized label on a tiny sliver never bleeds into neighbors.
+        const isCorner = isCutRow && col.cut;
         if (cellW > 14 * dpr && cellH > 10 * dpr) {
+          ctx.save();
+          ctx.fillStyle = '#F3E9DE';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
           ctx.beginPath();
           ctx.rect(x * scale, y * scale, cellW, cellH);
           ctx.clip();
-          ctx.fillText(label, x * scale + cellW / 2, y * scale + cellH / 2);
+          const cx = x * scale + cellW / 2, cy = y * scale + cellH / 2;
+          const maxTextW = cellW - 6 * dpr;
+
+          if (isCorner) {
+            // Corner piece: cut in both directions — stack width over height
+            // instead of one long "W×H" string, which is what was
+            // overflowing narrow corner cells.
+            const wLabel = `${col.width.toFixed(1)}"`;
+            const hLabel = `${rh.toFixed(1)}"`;
+            let fontSize = Math.min(cellW, cellH) * 0.26;
+            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+            const widest = Math.max(ctx.measureText(wLabel).width, ctx.measureText(hLabel).width);
+            if (widest > maxTextW) fontSize *= maxTextW / widest;
+            fontSize = Math.max(fontSize, 6 * dpr);
+            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+            const lineH = fontSize * 1.2;
+            ctx.fillText(wLabel, cx, cy - lineH / 2);
+            ctx.fillText(hLabel, cx, cy + lineH / 2);
+          } else {
+            const label = isCutRow ? `${rh.toFixed(1)}"` : `${col.width.toFixed(1)}"`;
+            let fontSize = Math.max(9 * dpr, Math.min(cellW, cellH) * 0.22);
+            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+            const w = ctx.measureText(label).width;
+            if (w > maxTextW) fontSize *= maxTextW / w;
+            fontSize = Math.max(fontSize, 6 * dpr);
+            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+            ctx.fillText(label, cx, cy);
+          }
+          ctx.restore();
         }
-        ctx.restore();
       }
       x += col.width;
     }
