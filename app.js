@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -359,10 +359,17 @@ function drawLayout(layout) {
   // exactly where the corner detail matters most.
   const displayWidth = canvas.parentElement.clientWidth || Math.min(window.innerWidth - 48, 480);
   const padding = 20;
-  const scale = Math.max((displayWidth - padding * 2) / layout.wallWidth, 2) * dpr;
+  // A wallWidth × wallHeight rectangle rotated 45° needs a bigger square
+  // bounding box to avoid spilling outside the canvas — this is what was
+  // clipping the diamond layout at the card edge.
+  const boundSide = layout.diagonalMode
+    ? (layout.wallWidth + layout.wallHeight) / Math.SQRT2
+    : null;
+  const fitSpan = layout.diagonalMode ? boundSide : layout.wallWidth;
+  const scale = Math.max((displayWidth - padding * 2) / fitSpan, 2) * dpr;
   const pad = padding * dpr;
-  canvas.width = layout.wallWidth * scale + pad * 2;
-  canvas.height = layout.wallHeight * scale + pad * 2;
+  canvas.width = (layout.diagonalMode ? boundSide : layout.wallWidth) * scale + pad * 2;
+  canvas.height = (layout.diagonalMode ? boundSide : layout.wallHeight) * scale + pad * 2;
   canvas.style.width = displayWidth + 'px';
   canvas.style.height = (canvas.height / dpr) + 'px';
   const ctx = canvas.getContext('2d');
@@ -430,6 +437,13 @@ function drawLayout(layout) {
           const cx = x * scale + cellW / 2, cy = y * scale + cellH / 2;
           const maxTextW = cellW - 6 * dpr;
 
+          // Move the origin to the cell center, then counter-rotate so the
+          // text always reads upright on screen — otherwise, in diamond
+          // mode, the label inherits the same 45° rotation as the grid and
+          // comes out sideways/unreadable.
+          ctx.translate(cx, cy);
+          if (layout.diagonalMode) ctx.rotate(-Math.PI / 4);
+
           if (isCorner) {
             // Corner piece: cut in both directions — stack width over height
             // instead of one long "W×H" string, which is what was
@@ -443,8 +457,8 @@ function drawLayout(layout) {
             fontSize = Math.max(fontSize, 6 * dpr);
             ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
             const lineH = fontSize * 1.2;
-            ctx.fillText(wLabel, cx, cy - lineH / 2);
-            ctx.fillText(hLabel, cx, cy + lineH / 2);
+            ctx.fillText(wLabel, 0, -lineH / 2);
+            ctx.fillText(hLabel, 0, lineH / 2);
           } else {
             const label = isCutRow ? `${rh.toFixed(1)}"` : `${col.width.toFixed(1)}"`;
             let fontSize = Math.max(9 * dpr, Math.min(cellW, cellH) * 0.22);
@@ -453,7 +467,7 @@ function drawLayout(layout) {
             if (w > maxTextW) fontSize *= maxTextW / w;
             fontSize = Math.max(fontSize, 6 * dpr);
             ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-            ctx.fillText(label, cx, cy);
+            ctx.fillText(label, 0, 0);
           }
           ctx.restore();
         }
