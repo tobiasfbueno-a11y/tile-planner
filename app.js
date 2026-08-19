@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -443,7 +443,7 @@ function drawLayout(layout) {
     let x = 0;
     for (const col of colWidths) {
       const isCut = isCutRow || col.cut;
-      ctx.fillStyle = isCut ? 'rgba(181,103,58,0.35)' : 'rgba(62,124,122,0.35)';
+      ctx.fillStyle = isCut ? 'rgba(90,171,168,0.55)' : 'rgba(62,124,122,0.35)';
       ctx.fillRect(x * scale, y * scale, col.width * scale, rh * scale);
       ctx.strokeStyle = '#EDEAE4';
       ctx.lineWidth = dpr; // ~1 CSS pixel, crisp regardless of screen density
