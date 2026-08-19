@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -183,14 +183,15 @@ function anchoredSplit(total, unit, minCut, anchor) {
     const c = centeredSplit(total, unit, minCut);
     return { n: c.n, rem: c.rem, edgeStart: c.edge, edgeEnd: c.edge, anchor };
   }
-  let n = Math.floor(total / unit);
-  let rem = +(total - n * unit).toFixed(3);
-  let guard = 0;
-  while (rem > 0.01 && rem < minCut && n > 0 && guard < 20) {
-    n -= 1;
-    rem = +(total - n * unit).toFixed(3);
-    guard++;
-  }
+  // Single-sided anchor: the leftover can only land on ONE edge. Unlike the
+  // centered case, we can't dodge a too-thin sliver by pulling a whole tile
+  // out and splitting the extra across two edges — a single edge piece can
+  // never be bigger than one real tile, and pulling a tile out here would
+  // do exactly that (e.g. a 12" tile + a 2.6" sliver ≠ one 14.6" tile — that
+  // size tile doesn't exist). So we report the true remainder as-is; a
+  // sub-4" result still trips the thinSliverWarning downstream.
+  const n = Math.floor(total / unit);
+  const rem = +(total - n * unit).toFixed(3);
   return {
     n, rem,
     edgeStart: anchor === 'end' ? rem : 0,
@@ -324,13 +325,16 @@ function rowOffset(pattern, rowIndex, effW) {
 // Enforces MIN_CUT_IN: if the first or last piece would be too thin, it merges
 // with the neighboring full tile instead of leaving a fragile sliver.
 function buildRowColumns(effW, wallWidth, offset) {
+  // Note: a cut piece can never legitimately be wider than one real tile
+  // (effW) — you cut material away from a tile, you can't grow one. So thin
+  // slivers (<MIN_CUT_IN) are reported as-is rather than folded into a
+  // neighboring full tile, which would produce an impossible oversized
+  // piece. thinSliverWarning downstream already flags this case for the
+  // installer.
   const cols = [];
   let remaining = wallWidth;
   if (offset > 0.05) {
-    let firstW = Math.min(effW - offset, wallWidth);
-    if (firstW < MIN_CUT_IN && remaining > effW) {
-      firstW += effW; // fold the next full tile into this cut piece
-    }
+    const firstW = Math.min(effW - offset, wallWidth);
     cols.push({ width: firstW, cut: true });
     remaining -= firstW;
   }
@@ -340,16 +344,7 @@ function buildRowColumns(effW, wallWidth, offset) {
   }
   if (remaining > 0.05) {
     const isCut = remaining < effW - 0.05;
-    if (isCut && remaining < MIN_CUT_IN && cols.length > 0) {
-      // Merge this thin trailing piece into the previous full tile.
-      const prev = cols[cols.length - 1];
-      if (!prev.cut) {
-        prev.width += remaining;
-        prev.cut = false;
-        remaining = 0;
-      }
-    }
-    if (remaining > 0.05) cols.push({ width: remaining, cut: isCut });
+    cols.push({ width: remaining, cut: isCut });
   }
   return cols;
 }
