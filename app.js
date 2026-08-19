@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -359,17 +359,13 @@ function drawLayout(layout) {
   // exactly where the corner detail matters most.
   const displayWidth = canvas.parentElement.clientWidth || Math.min(window.innerWidth - 48, 480);
   const padding = 20;
-  // A wallWidth × wallHeight rectangle rotated 45° needs a bigger square
-  // bounding box to avoid spilling outside the canvas — this is what was
-  // clipping the diamond layout at the card edge.
-  const boundSide = layout.diagonalMode
-    ? (layout.wallWidth + layout.wallHeight) / Math.SQRT2
-    : null;
-  const fitSpan = layout.diagonalMode ? boundSide : layout.wallWidth;
-  const scale = Math.max((displayWidth - padding * 2) / fitSpan, 2) * dpr;
+  const scale = Math.max((displayWidth - padding * 2) / layout.wallWidth, 2) * dpr;
   const pad = padding * dpr;
-  canvas.width = (layout.diagonalMode ? boundSide : layout.wallWidth) * scale + pad * 2;
-  canvas.height = (layout.diagonalMode ? boundSide : layout.wallHeight) * scale + pad * 2;
+  // The wall itself is always the real rectangle — diamond mode never
+  // rotates the wall, only the tile grid inside it. So canvas size always
+  // matches the true wallWidth × wallHeight, never an expanded diagonal box.
+  canvas.width = layout.wallWidth * scale + pad * 2;
+  canvas.height = layout.wallHeight * scale + pad * 2;
   canvas.style.width = displayWidth + 'px';
   canvas.style.height = (canvas.height / dpr) + 'px';
   const ctx = canvas.getContext('2d');
@@ -379,7 +375,41 @@ function drawLayout(layout) {
 
   ctx.save();
   ctx.translate(canvas.width / 2, canvas.height / 2);
-  if (layout.diagonalMode) ctx.rotate(Math.PI / 4);
+  // Clip to the true wall rectangle BEFORE rotating anything, so only the
+  // tile pattern spins — pieces that cross the real wall edge get trimmed
+  // by this clip into the natural triangular/pentagon corner shapes,
+  // instead of the wall boundary itself appearing as a rotated diamond.
+  ctx.beginPath();
+  ctx.rect(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2, layout.wallWidth * scale, layout.wallHeight * scale);
+  ctx.clip();
+
+  if (layout.diagonalMode) {
+    // Diamond mode: tile a generously oversized, unrotated-internally grid
+    // of full tiles, rotate the whole grid 45°, and let the clip above trim
+    // it to the real wall shape. No per-row cut/offset bookkeeping needed
+    // here — the clip alone produces the correct triangular edge pieces.
+    ctx.rotate(Math.PI / 4);
+    const span = layout.wallWidth + layout.wallHeight; // generous cover margin
+    const nCols = Math.ceil(span / layout.effW) + 2;
+    const nRows = Math.ceil(span / layout.effH) + 2;
+    const gridW = nCols * layout.effW;
+    const gridH = nRows * layout.effH;
+    ctx.translate(-gridW * scale / 2, -gridH * scale / 2);
+    ctx.strokeStyle = '#EDEAE4';
+    ctx.lineWidth = dpr;
+    for (let r = 0; r < nRows; r++) {
+      for (let c = 0; c < nCols; c++) {
+        const px = c * layout.tileW * scale;
+        const py = r * layout.tileH * scale;
+        ctx.fillStyle = 'rgba(62,124,122,0.35)';
+        ctx.fillRect(px, py, layout.tileW * scale, layout.tileH * scale);
+        ctx.strokeRect(px, py, layout.tileW * scale, layout.tileH * scale);
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
   ctx.translate(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2);
 
   // Build rows bottom-to-top. Every row — cut or full — is a real course in
@@ -400,7 +430,7 @@ function drawLayout(layout) {
     const isCutRow = row.edge;
 
     let colWidths;
-    if (layout.pattern === 'straight' || layout.diagonalMode) {
+    if (layout.pattern === 'straight') {
       colWidths = [];
       if (layout.edgeCutWStart > 0.05) colWidths.push({ width: layout.edgeCutWStart, cut: true });
       for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
@@ -436,13 +466,7 @@ function drawLayout(layout) {
           ctx.clip();
           const cx = x * scale + cellW / 2, cy = y * scale + cellH / 2;
           const maxTextW = cellW - 6 * dpr;
-
-          // Move the origin to the cell center, then counter-rotate so the
-          // text always reads upright on screen — otherwise, in diamond
-          // mode, the label inherits the same 45° rotation as the grid and
-          // comes out sideways/unreadable.
           ctx.translate(cx, cy);
-          if (layout.diagonalMode) ctx.rotate(-Math.PI / 4);
 
           if (isCorner) {
             // Corner piece: cut in both directions — stack width over height
