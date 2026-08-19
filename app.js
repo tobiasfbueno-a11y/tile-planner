@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -812,7 +812,7 @@ document.getElementById('regenBtn').addEventListener('click', () => {
 // ---------- OpenRouter image editing (pay-as-you-go, $5 minimum) ----------
 async function generateTiledImage(apiKey, layout) {
   const orientationLabel = { horizontal: 'na horizontal', vertical: 'na vertical', diamond: 'em diamante (45°)' }[layout.orientation];
-  const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento progressivo de 1/3 a cada fileira', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
+  const patternLabel = { straight: 'em grade reta alinhada', brick: 'em amarração tipo brick (deslocamento de metade do tile a cada fileira)', third: 'com deslocamento de 1/3 (offset de um terço da largura do tile a cada fileira)', thirdMirrored: 'com deslocamento de 1/3 espelhado, alternando a cada fileira' }[layout.pattern];
 
   // Grab the already-computed layout diagram as a reference image so the
   // model can copy the exact grid/offset instead of guessing from text —
@@ -820,18 +820,32 @@ async function generateTiledImage(apiKey, layout) {
   const diagramCanvas = document.getElementById('layoutCanvas');
   const diagramDataUrl = diagramCanvas.toDataURL('image/png');
 
-  const prompt = `Tarefa de edição de imagem fotorrealista — siga com precisão literal, sem liberdade criativa.
+  // Concrete numbers, not just adjectives — a model told "tile grande" can
+  // still default to a generic small-subway-tile look. Anchoring the exact
+  // column/row count and real inch sizes gives it something to actually
+  // compute proportion against, instead of guessing scale from the photo.
+  const prompt = `Tarefa de edição de imagem fotorrealista — siga com precisão literal, sem liberdade criativa e SEM interpretar ou estilizar. Você é uma ferramenta de overlay, não um designer.
 
-Imagem 1 = a foto do espaço original (parede/piso).
-Imagem 2 = a foto real do tile a ser aplicado.
-Imagem 3 = o diagrama exato do layout de instalação (linhas de rejunte e deslocamento entre fileiras) que você DEVE reproduzir — não é decoração, é a grade literal a copiar.
+Imagem 1 = a foto do espaço original (parede/piso), medindo ${layout.wallWidth.toFixed(0)}" × ${layout.wallHeight.toFixed(0)}" reais.
+Imagem 2 = a foto real do tile a ser aplicado, medindo ${layout.tileW.toFixed(0)}" × ${layout.tileH.toFixed(0)}" reais — um tile GRANDE em relação à parede.
+Imagem 3 = o diagrama exato do layout (grade + deslocamento entre fileiras) — é um blueprint literal a decalcar, não uma referência solta de estilo. NÃO reinterprete o padrão dela.
 
-Regras, na ordem de importância:
-1. O PADRÃO da grade de rejunte na imagem final deve seguir exatamente a Imagem 3: ${patternLabel}. Se a Imagem 3 mostra fileiras deslocadas horizontalmente entre si, a imagem final também precisa mostrar esse deslocamento — NÃO gere uma grade reta se a Imagem 3 não é reta.
-2. A cor, o tom, a textura e o padrão do tile devem ser idênticos à Imagem 2 — não aproxime, não substitua por um tile "parecido" ou genérico.
-3. Mantenha a perspectiva, o enquadramento, a iluminação e todos os outros elementos da foto original (móveis, porta, TV, objetos, teto, chão não revestido) inalterados. Não invente elementos que não estavam na foto.
+ESCALA (leia com atenção — erro comum é desenhar tiles pequenos demais):
+- A grade tem exatamente ${layout.totalCols} coluna(s) e ${layout.totalRows} fileira(s) de tile cobrindo TODA a superfície.
+- Cada tile individual ocupa aproximadamente 1/${layout.totalCols} da LARGURA da parede e 1/${layout.totalRows} da ALTURA da parede.
+- Se a Imagem 3 mostra poucas peças grandes, a imagem final também deve mostrar poucas peças grandes — NÃO desenhe uma grade fina/miúda tipo subway tile. Cada peça individual deve claramente cobrir uma fração grande e visível da parede, do mesmo jeito que a Imagem 3 mostra.
 
-Aplique os tiles orientados ${orientationLabel}, cobrindo toda a superfície, com linhas de rejunte finas e realistas seguindo o deslocamento exato da Imagem 3.`;
+PADRÃO (copie exatamente, não aproxime):
+- A Imagem 3 usa o padrão: ${patternLabel}.
+- Conte as colunas e o deslocamento fileira a fileira na Imagem 3 e replique essa contagem exata na imagem final — não substitua por uma grade reta nem por outro padrão de deslocamento.
+
+MATERIAL:
+- Cor, tom, textura e padrão do tile devem ser idênticos à Imagem 2 — não aproxime, não substitua por um tile "parecido" ou genérico.
+
+CENA:
+- Mantenha a perspectiva, o enquadramento, a iluminação e todos os outros elementos da foto original (móveis, porta, TV, objetos, teto, chão não revestido) inalterados. Não invente elementos que não estavam na foto.
+
+Aplique os tiles orientados ${orientationLabel}, cobrindo toda a superfície, com linhas de rejunte finas e realistas seguindo exatamente a grade e o deslocamento da Imagem 3.`;
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
