@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -356,10 +356,20 @@ function buildRowColumns(effW, wallWidth, offset) {
 
 function drawLayout(layout) {
   const canvas = document.getElementById('layoutCanvas');
-  const scale = 8; // px per inch
+  const dpr = window.devicePixelRatio || 1;
+  // Render at the canvas's actual on-screen CSS width × device pixel ratio,
+  // instead of a fixed 8px/inch that could be far larger than the display
+  // width. Drawing oversized and letting the browser squeeze it down via
+  // CSS was blurring/erasing the thin grout lines on cut rows/columns —
+  // exactly where the corner detail matters most.
+  const displayWidth = canvas.parentElement.clientWidth || Math.min(window.innerWidth - 48, 480);
   const padding = 20;
-  canvas.width = layout.wallWidth * scale + padding * 2;
-  canvas.height = layout.wallHeight * scale + padding * 2;
+  const scale = Math.max((displayWidth - padding * 2) / layout.wallWidth, 2) * dpr;
+  const pad = padding * dpr;
+  canvas.width = layout.wallWidth * scale + pad * 2;
+  canvas.height = layout.wallHeight * scale + pad * 2;
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = (canvas.height / dpr) + 'px';
   const ctx = canvas.getContext('2d');
 
   ctx.fillStyle = '#1a1918';
@@ -403,8 +413,34 @@ function drawLayout(layout) {
       ctx.fillStyle = isCut ? 'rgba(181,103,58,0.35)' : 'rgba(62,124,122,0.35)';
       ctx.fillRect(x * scale, y * scale, col.width * scale, rh * scale);
       ctx.strokeStyle = '#EDEAE4';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = dpr; // ~1 CSS pixel, crisp regardless of screen density
       ctx.strokeRect(x * scale, y * scale, col.width * scale, rh * scale);
+
+      // Print the exact cut size on every cut piece — corners are exactly
+      // where a purely visual read of a thin sliver is easiest to misjudge,
+      // so the number removes any ambiguity regardless of how small it draws.
+      if (isCut) {
+        const cellW = col.width * scale;
+        const cellH = rh * scale;
+        let label;
+        if (isCutRow && col.cut) label = `${col.width.toFixed(1)}"×${rh.toFixed(1)}"`; // corner: cut both ways
+        else if (isCutRow) label = `${rh.toFixed(1)}"`; // height-cut row, full-width piece
+        else label = `${col.width.toFixed(1)}"`; // width-cut piece, full height
+        ctx.save();
+        ctx.fillStyle = '#F3E9DE';
+        ctx.font = `${Math.max(9 * dpr, Math.min(cellW, cellH) * 0.22)}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Only draw if there's reasonable room, and clip to the cell so an
+        // oversized label on a tiny sliver never bleeds into neighbors.
+        if (cellW > 14 * dpr && cellH > 10 * dpr) {
+          ctx.beginPath();
+          ctx.rect(x * scale, y * scale, cellW, cellH);
+          ctx.clip();
+          ctx.fillText(label, x * scale + cellW / 2, y * scale + cellH / 2);
+        }
+        ctx.restore();
+      }
       x += col.width;
     }
     y += rh;
