@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v24';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -349,6 +349,130 @@ function buildRowColumns(effW, wallWidth, offset) {
   return cols;
 }
 
+// Greedy bin-packing: given a list of cut-piece sizes and the real material
+// size they're cut from (one tile's actual width or height — not
+// tile+grout), estimates how many physical tiles are needed if two cuts
+// that together fit within one tile get nested from the same piece instead
+// of each consuming a separate whole tile. First-fit-decreasing: take the
+// largest remaining piece, pair it with the largest other piece that still
+// fits alongside it, repeat.
+function packCuts(sizes, materialSize) {
+  const sorted = sizes.map((s, i) => ({ s, i })).sort((a, b) => b.s - a.s);
+  const used = new Array(sorted.length).fill(false);
+  let tileCount = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    tileCount++;
+    const remaining = materialSize - sorted[i].s;
+    let bestJ = -1, bestSize = -1;
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (used[j]) continue;
+      if (sorted[j].s <= remaining + 0.02 && sorted[j].s > bestSize) {
+        bestJ = j;
+        bestSize = sorted[j].s;
+      }
+    }
+    if (bestJ >= 0) used[bestJ] = true;
+  }
+  return tileCount;
+}
+
+// Walks the same row/column grid drawLayout renders, but just tallies
+// pieces instead of drawing — full tiles, corner (double-cut) pieces that
+// always need their own dedicated tile, and single-direction cut pieces
+// whose offcut can potentially be reused for another cut from the same
+// tile (per the user's rule: only pieces cut on ONE side are reuse
+// candidates — a corner piece's leftover is an odd L-shape, not a clean
+// reusable strip).
+function computeMaterialStats(layout) {
+  const sqft = (layout.wallWidth * layout.wallHeight) / 144;
+
+  if (layout.diagonalMode) {
+    // Triangular/pentagon offcuts from the 45° clip don't nest reliably the
+    // same way — fall back to the existing waste-factor estimate.
+    return { sqft, buyTiles: layout.totalTiles, optimized: false };
+  }
+
+  const rowsBU = [];
+  let courseSeq = 0;
+  if (layout.edgeCutHStart > 0.05) rowsBU.push({ height: layout.edgeCutHStart, edge: true, courseIdx: courseSeq++ });
+  for (let i = 0; i < layout.rowsFull; i++) rowsBU.push({ height: layout.tileH, edge: false, courseIdx: courseSeq++ });
+  if (layout.edgeCutHEnd > 0.05) rowsBU.push({ height: layout.edgeCutHEnd, edge: true, courseIdx: courseSeq++ });
+
+  let fullCount = 0, cornerCount = 0;
+  const widthCuts = [], heightCuts = [];
+
+  for (const row of rowsBU) {
+    let colWidths;
+    if (layout.pattern === 'straight') {
+      colWidths = [];
+      if (layout.edgeCutWStart > 0.05) colWidths.push({ width: layout.edgeCutWStart, cut: true });
+      for (let i = 0; i < layout.colsFull; i++) colWidths.push({ width: layout.tileW, cut: false });
+      if (layout.edgeCutWEnd > 0.05) colWidths.push({ width: layout.edgeCutWEnd, cut: true });
+    } else {
+      const offset = rowOffset(layout.pattern, row.courseIdx, layout.effW);
+      colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
+    }
+    for (const col of colWidths) {
+      const isCornerPiece = row.edge && col.cut;
+      const isWidthCutOnly = col.cut && !row.edge;
+      const isHeightCutOnly = row.edge && !col.cut;
+      if (isCornerPiece) cornerCount++;
+      else if (isWidthCutOnly) widthCuts.push(col.width);
+      else if (isHeightCutOnly) heightCuts.push(row.height);
+      else fullCount++;
+    }
+  }
+
+  const buyTiles = fullCount + cornerCount
+    + packCuts(widthCuts, layout.tileW)
+    + packCuts(heightCuts, layout.tileH);
+
+  return { sqft, buyTiles, optimized: true };
+}
+
+// Prints the space's own outer measurements along the diagram's edges —
+// the actual wall/floor dimensions, not tile math. For a crooked space,
+// each corner's real measured value is shown at that corner instead of one
+// single (averaged) number, since that's the whole point of measuring a
+// crooked space separately per corner.
+function drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad) {
+  const gridW = layout.wallWidth * scale;
+  const gridH = layout.wallHeight * scale;
+  const left = pad, top = pad;
+
+  ctx.save();
+  ctx.fillStyle = '#B9B2A8';
+  ctx.textBaseline = 'middle';
+
+  if (layout.corners) {
+    ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
+    const c = layout.corners;
+    ctx.textAlign = 'left';
+    ctx.fillText(`${c.tl.toFixed(1)}"`, left + 4 * dpr, top + 10 * dpr);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${c.tr.toFixed(1)}"`, left + gridW - 4 * dpr, top + 10 * dpr);
+    ctx.textAlign = 'left';
+    ctx.fillText(`${c.bl.toFixed(1)}"`, left + 4 * dpr, top + gridH - 10 * dpr);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${c.br.toFixed(1)}"`, left + gridW - 4 * dpr, top + gridH - 10 * dpr);
+  } else {
+    ctx.font = `${11 * dpr}px 'JetBrains Mono', monospace`;
+    ctx.save();
+    ctx.translate(left - 10 * dpr, top + gridH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText(`${layout.wallHeight.toFixed(1)}"`, 0, 0);
+    ctx.restore();
+  }
+
+  ctx.font = `${11 * dpr}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`${layout.wallWidth.toFixed(1)}"`, left + gridW / 2, top - 14 * dpr);
+  ctx.restore();
+}
+
 function drawLayout(layout) {
   const canvas = document.getElementById('layoutCanvas');
   const dpr = window.devicePixelRatio || 1;
@@ -358,7 +482,7 @@ function drawLayout(layout) {
   // CSS was blurring/erasing the thin grout lines on cut rows/columns —
   // exactly where the corner detail matters most.
   const displayWidth = canvas.parentElement.clientWidth || Math.min(window.innerWidth - 48, 480);
-  const padding = 20;
+  const padding = 34; // extra room for the width/height labels along the edges
   const scale = Math.max((displayWidth - padding * 2) / layout.wallWidth, 2) * dpr;
   const pad = padding * dpr;
   // The wall itself is always the real rectangle — diamond mode never
@@ -407,6 +531,7 @@ function drawLayout(layout) {
       }
     }
     ctx.restore();
+    drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad);
     return;
   }
 
@@ -495,6 +620,30 @@ function drawLayout(layout) {
           }
           ctx.restore();
         }
+      } else {
+        // Full, uncut tile — label it "FULL" so it's unmistakable at a
+        // glance which pieces need zero cutting.
+        const cellW = col.width * scale;
+        const cellH = rh * scale;
+        if (cellW > 30 * dpr && cellH > 16 * dpr) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(243,233,222,0.55)';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.beginPath();
+          ctx.rect(x * scale, y * scale, cellW, cellH);
+          ctx.clip();
+          ctx.translate(x * scale + cellW / 2, y * scale + cellH / 2);
+          let fontSize = Math.max(8 * dpr, Math.min(cellW, cellH) * 0.16);
+          ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
+          const w = ctx.measureText('FULL').width;
+          const maxTextW = cellW - 8 * dpr;
+          if (w > maxTextW) fontSize *= maxTextW / w;
+          fontSize = Math.max(fontSize, 6 * dpr);
+          ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
+          ctx.fillText('FULL', 0, 0);
+          ctx.restore();
+        }
       }
       x += col.width;
     }
@@ -502,8 +651,13 @@ function drawLayout(layout) {
   }
 
   ctx.restore();
+  drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad);
 }
-
+// Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
+// reference always follows vertAnchor. The vertical (side-wall) reference
+// follows horizAnchor for the straight pattern; offset patterns (brick/1-3)
+// keep measuring from the right wall, since the running pattern itself
+// dictates where the cut falls.
 // ---------- Installation start-point guide ----------
 // Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
 // reference always follows vertAnchor. The vertical (side-wall) reference
@@ -575,6 +729,14 @@ async function runCalculation() {
   document.getElementById('statCols').textContent = layout.colsRange || layout.totalCols;
   document.getElementById('statRows').textContent = layout.totalRows;
   document.getElementById('statTiles').textContent = layout.totalTiles;
+
+  const materialStats = computeMaterialStats(layout);
+  document.getElementById('statSqft').textContent = materialStats.sqft.toFixed(1);
+  document.getElementById('statBuyTiles').textContent = materialStats.buyTiles
+    + (materialStats.optimized ? '' : '*');
+  document.getElementById('buyTilesNote').textContent = materialStats.optimized
+    ? 'Já reaproveita sobras: 2 cortes de um lado só que cabem juntos numa peça só contam como 1 peça comprada (cantos cortados dos 2 lados não entram nesse reaproveitamento).'
+    : '*Estimativa com 15% de folga — padrão diamante tem sobras triangulares que não reaproveitam de forma confiável.';
   drawLayout(layout);
 
   const orientationLabel = { horizontal: 'horizontal', vertical: 'vertical', diamond: 'diamante (45°)' }[layout.orientation];

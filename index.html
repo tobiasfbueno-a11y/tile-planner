@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=v23">
+<link rel="stylesheet" href="style.css?v=v24">
 </head>
 <body>
 
@@ -205,8 +205,13 @@
       <div class="stat-strip">
         <div class="stat"><span class="num mono" id="statCols">–</span><span class="lbl">colunas</span></div>
         <div class="stat"><span class="num mono" id="statRows">–</span><span class="lbl">linhas</span></div>
-        <div class="stat"><span class="num mono" id="statTiles">–</span><span class="lbl">tiles totais</span></div>
+        <div class="stat"><span class="num mono" id="statTiles">–</span><span class="lbl">peças no desenho</span></div>
       </div>
+      <div class="stat-strip cols-2">
+        <div class="stat"><span class="num mono" id="statSqft">–</span><span class="lbl">sq ft do espaço</span></div>
+        <div class="stat"><span class="num mono" id="statBuyTiles">–</span><span class="lbl">peças pra comprar</span></div>
+      </div>
+      <p class="micro-note" id="buyTilesNote"></p>
 
       <div class="result-canvas-wrap">
         <canvas id="layoutCanvas"></canvas>
@@ -234,6 +239,6 @@
 
 </main>
 
-<script src="app.js?v=v23"></script>
+<script src="app.js?v=v24"></script>
 </body>
 </html>
