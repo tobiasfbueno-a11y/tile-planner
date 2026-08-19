@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- State ----------
@@ -183,15 +183,19 @@ function anchoredSplit(total, unit, minCut, anchor) {
     const c = centeredSplit(total, unit, minCut);
     return { n: c.n, rem: c.rem, edgeStart: c.edge, edgeEnd: c.edge, anchor };
   }
-  // Single-sided anchor: the leftover can only land on ONE edge. Unlike the
-  // centered case, we can't dodge a too-thin sliver by pulling a whole tile
-  // out and splitting the extra across two edges — a single edge piece can
-  // never be bigger than one real tile, and pulling a tile out here would
-  // do exactly that (e.g. a 12" tile + a 2.6" sliver ≠ one 14.6" tile — that
-  // size tile doesn't exist). So we report the true remainder as-is; a
-  // sub-4" result still trips the thinSliverWarning downstream.
+  // Single-sided anchor: the leftover can only land on ONE edge. A pure
+  // single edge piece can never be bigger than one real tile (see below),
+  // so we can't fix a too-thin sliver by pulling a whole tile out the way
+  // centeredSplit does. Instead, when the single-sided cut would come out
+  // under minCut, borrow a little from the flush side too and split the
+  // total leftover across BOTH edges — still close to flush at the chosen
+  // anchor, but neither edge ends up a razor-thin sliver.
   const n = Math.floor(total / unit);
   const rem = +(total - n * unit).toFixed(3);
+  if (rem > 0.05 && rem < minCut && n > 0) {
+    const c = centeredSplit(total, unit, minCut);
+    return { n: c.n, rem: c.rem, edgeStart: c.edge, edgeEnd: c.edge, anchor, redistributed: true };
+  }
   return {
     n, rem,
     edgeStart: anchor === 'end' ? rem : 0,
@@ -259,9 +263,11 @@ function computeLayout() {
   const edgeCutHStart = rowSplit.edgeStart; // at the floor
   const edgeCutHEnd = rowSplit.edgeEnd;     // at the ceiling/top
   const hasHorizontalCut = remH > 0.05;
+  const vertRedistributed = !!rowSplit.redistributed;
   const totalRows = rowsFull + (edgeCutHStart > 0.05 ? 1 : 0) + (edgeCutHEnd > 0.05 ? 1 : 0);
 
   let colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, totalCols, totalTiles, colsRange = null;
+  let horizRedistributed = false;
 
   if (pattern === 'straight' || diagonalMode) {
     // horizAnchor: 'left'/'right' flush a full tile against that wall; the
@@ -273,6 +279,7 @@ function computeLayout() {
     edgeCutWStart = colSplit.edgeStart; // left side
     edgeCutWEnd = colSplit.edgeEnd;     // right side
     hasVerticalCut = remW > 0.05;
+    horizRedistributed = !!colSplit.redistributed;
     totalCols = colsFull + (edgeCutWStart > 0.05 ? 1 : 0) + (edgeCutWEnd > 0.05 ? 1 : 0);
     totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
   } else {
@@ -309,6 +316,7 @@ function computeLayout() {
     rowsFull, remH, edgeCutHStart, edgeCutHEnd, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
     thinSliverWarning, corners, heightVariation,
+    vertRedistributed, horizRedistributed,
     effW, effH,
   };
 }
@@ -473,6 +481,53 @@ function drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad) {
   ctx.restore();
 }
 
+// Draws a technical dimension line: a straight line between two points with
+// small perpendicular tick marks at each end (|———|, no arrowheads), plus
+// the measurement centered above/beside it. This is how the exact cut size
+// is marked on a piece — a line spanning the cut, not just a floating
+// number, so it's clear which dimension the number refers to.
+function drawDimensionMark(ctx, dpr, x1, y1, x2, y2, label, orientation, spanPx) {
+  ctx.save();
+  ctx.strokeStyle = '#F3E9DE';
+  ctx.lineWidth = dpr;
+  const tick = 6 * dpr;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  if (orientation === 'horizontal') {
+    ctx.moveTo(x1, y1 - tick / 2); ctx.lineTo(x1, y1 + tick / 2);
+    ctx.moveTo(x2, y2 - tick / 2); ctx.lineTo(x2, y2 + tick / 2);
+  } else {
+    ctx.moveTo(x1 - tick / 2, y1); ctx.lineTo(x1 + tick / 2, y1);
+    ctx.moveTo(x2 - tick / 2, y2); ctx.lineTo(x2 + tick / 2, y2);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = '#F3E9DE';
+  ctx.textAlign = 'center';
+  let fontSize = Math.max(8 * dpr, tick * 1.6);
+  ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+  const maxTextW = Math.max(spanPx, 1);
+  const w = ctx.measureText(label).width;
+  if (w > maxTextW) fontSize *= maxTextW / w;
+  fontSize = Math.max(fontSize, 6 * dpr);
+  ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+
+  if (orientation === 'horizontal') {
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(label, (x1 + x2) / 2, Math.min(y1, y2) - 3 * dpr);
+  } else {
+    ctx.save();
+    ctx.translate((x1 + x2) / 2, (y1 + y2) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(label, 0, -tick / 2 - 3 * dpr);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawLayout(layout) {
   const canvas = document.getElementById('layoutCanvas');
   const dpr = window.devicePixelRatio || 1;
@@ -574,52 +629,51 @@ function drawLayout(layout) {
       ctx.lineWidth = dpr; // ~1 CSS pixel, crisp regardless of screen density
       ctx.strokeRect(x * scale, y * scale, col.width * scale, rh * scale);
 
-      // Print the exact cut size on every cut piece — corners are exactly
-      // where a purely visual read of a thin sliver is easiest to misjudge,
-      // so the number removes any ambiguity regardless of how small it draws.
+      // Mark the exact cut size with a proper dimension line — a straight
+      // line with small perpendicular tick marks at each end (|———|), the
+      // way an installer would actually read a technical drawing — instead
+      // of just a number floating in the middle of the piece.
       if (isCut) {
         const cellW = col.width * scale;
         const cellH = rh * scale;
         const isCorner = isCutRow && col.cut;
-        if (cellW > 14 * dpr && cellH > 10 * dpr) {
-          ctx.save();
-          ctx.fillStyle = '#F3E9DE';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.beginPath();
-          ctx.rect(x * scale, y * scale, cellW, cellH);
-          ctx.clip();
-          const cx = x * scale + cellW / 2, cy = y * scale + cellH / 2;
-          const maxTextW = cellW - 6 * dpr;
-          ctx.translate(cx, cy);
+        const cellX = x * scale, cellY = y * scale;
+        const margin = Math.min(cellW, cellH) * 0.18;
 
-          if (isCorner) {
-            // Corner piece: cut in both directions — stack width over height
-            // instead of one long "W×H" string, which is what was
-            // overflowing narrow corner cells.
-            const wLabel = `${col.width.toFixed(1)}"`;
-            const hLabel = `${rh.toFixed(1)}"`;
-            let fontSize = Math.min(cellW, cellH) * 0.26;
-            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-            const widest = Math.max(ctx.measureText(wLabel).width, ctx.measureText(hLabel).width);
-            if (widest > maxTextW) fontSize *= maxTextW / widest;
-            fontSize = Math.max(fontSize, 6 * dpr);
-            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-            const lineH = fontSize * 1.2;
-            ctx.fillText(wLabel, 0, -lineH / 2);
-            ctx.fillText(hLabel, 0, lineH / 2);
-          } else {
-            const label = isCutRow ? `${rh.toFixed(1)}"` : `${col.width.toFixed(1)}"`;
-            let fontSize = Math.max(9 * dpr, Math.min(cellW, cellH) * 0.22);
-            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-            const w = ctx.measureText(label).width;
-            if (w > maxTextW) fontSize *= maxTextW / w;
-            fontSize = Math.max(fontSize, 6 * dpr);
-            ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-            ctx.fillText(label, 0, 0);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cellX, cellY, cellW, cellH);
+        ctx.clip();
+
+        if (isCorner) {
+          // Cut in both directions: one horizontal tick-line for the width,
+          // one vertical tick-line for the height, each labeled separately.
+          if (cellW > 26 * dpr && cellH > 14 * dpr) {
+            drawDimensionMark(ctx, dpr,
+              cellX + margin, cellY + cellH * 0.72, cellX + cellW - margin, cellY + cellH * 0.72,
+              `${col.width.toFixed(1)}"`, 'horizontal', cellW - margin * 2);
           }
-          ctx.restore();
+          if (cellH > 26 * dpr && cellW > 14 * dpr) {
+            drawDimensionMark(ctx, dpr,
+              cellX + cellW * 0.72, cellY + margin, cellX + cellW * 0.72, cellY + cellH - margin,
+              `${rh.toFixed(1)}"`, 'vertical', cellH - margin * 2);
+          }
+        } else if (isCutRow) {
+          // Height-cut, full width: vertical tick-line.
+          if (cellH > 26 * dpr && cellW > 14 * dpr) {
+            drawDimensionMark(ctx, dpr,
+              cellX + cellW / 2, cellY + margin, cellX + cellW / 2, cellY + cellH - margin,
+              `${rh.toFixed(1)}"`, 'vertical', cellH - margin * 2);
+          }
+        } else {
+          // Width-cut, full height: horizontal tick-line.
+          if (cellW > 26 * dpr && cellH > 14 * dpr) {
+            drawDimensionMark(ctx, dpr,
+              cellX + margin, cellY + cellH / 2, cellX + cellW - margin, cellY + cellH / 2,
+              `${col.width.toFixed(1)}"`, 'horizontal', cellW - margin * 2);
+          }
         }
+        ctx.restore();
       } else {
         // Full, uncut tile — label it "FULL" so it's unmistakable at a
         // glance which pieces need zero cutting.
@@ -750,14 +804,14 @@ async function runCalculation() {
       note += `Os tiles encaixam perfeitamente na largura e altura do espaço, sem cortes.`;
     } else {
       const parts = [];
-      if (layout.horizAnchor === 'center' && layout.hasVerticalCut) {
-        parts.push(`cortes de ${layout.edgeCutWStart}" iguais nas duas laterais`);
+      if ((layout.horizAnchor === 'center' || layout.horizRedistributed) && layout.hasVerticalCut) {
+        parts.push(`cortes de ${layout.edgeCutWStart}" iguais nas duas laterais` + (layout.horizRedistributed ? ' (dividido pros dois lados pra evitar um corte fino demais só de um lado)' : ''));
       } else if (layout.hasVerticalCut) {
         const side = layout.horizAnchor === 'left' ? 'direita' : 'esquerda';
         parts.push(`corte de ${(layout.edgeCutWStart || layout.edgeCutWEnd).toFixed(2)}" só na lateral ${side} (peça inteira encostada na parede ${layout.horizAnchor === 'left' ? 'esquerda' : 'direita'})`);
       }
-      if (layout.vertAnchor === 'center' && layout.hasHorizontalCut) {
-        parts.push(`cortes de ${layout.edgeCutHStart}" iguais em cima e embaixo`);
+      if ((layout.vertAnchor === 'center' || layout.vertRedistributed) && layout.hasHorizontalCut) {
+        parts.push(`cortes de ${layout.edgeCutHStart}" iguais em cima e embaixo` + (layout.vertRedistributed ? ' (dividido pros dois lados pra evitar um corte fino demais só de um lado)' : ''));
       } else if (layout.hasHorizontalCut) {
         const side = layout.vertAnchor === 'bottom' ? 'no topo' : 'na base';
         parts.push(`corte de ${(layout.edgeCutHStart || layout.edgeCutHEnd).toFixed(2)}" só ${side} (peça inteira encostada n${layout.vertAnchor === 'bottom' ? 'o chão' : 'o topo'})`);
