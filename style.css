@@ -254,6 +254,13 @@ label.field {
   color: var(--porcelain-dim);
 }
 
+.frac-input-row {
+  display: flex;
+  gap: 6px;
+}
+.frac-input-row input[type="number"] { flex: 1.3; min-width: 0; }
+.frac-select { flex: 1; min-width: 0; }
+
 .hint {
   font-size: 11px;
   color: var(--porcelain-dim);

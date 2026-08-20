@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=v27">
+<link rel="stylesheet" href="style.css?v=v28">
 </head>
 <body>
 
@@ -54,10 +54,16 @@
       <fieldset>
         <div class="grid-2">
           <label class="field">Largura (pol)
-            <input type="number" inputmode="decimal" id="wallWidth" placeholder="ex: 82.5">
+            <div class="frac-input-row">
+              <input type="number" inputmode="numeric" id="wallWidthWhole" placeholder="82" min="0" step="1">
+              <select id="wallWidthFrac" class="frac-select"></select>
+            </div>
           </label>
           <label class="field">Altura / comprimento (pol)
-            <input type="number" inputmode="decimal" id="wallHeight" placeholder="ex: 96">
+            <div class="frac-input-row">
+              <input type="number" inputmode="numeric" id="wallHeightWhole" placeholder="96" min="0" step="1">
+              <select id="wallHeightFrac" class="frac-select"></select>
+            </div>
           </label>
         </div>
 
@@ -87,13 +93,25 @@
           <div class="note-box">Meça a medida (altura da parede ou comprimento do piso) em cada canto, em polegadas. Isso ajuda a calcular onde os cortes ficam menos visíveis.</div>
           <div class="grid-2" style="margin-top:10px;">
             <label class="field"><span class="corner-label">Canto sup. esq.</span>
-              <input type="number" inputmode="decimal" id="cornerTL" placeholder="pol"></label>
+              <div class="frac-input-row">
+                <input type="number" inputmode="numeric" id="cornerTLWhole" placeholder="pol" min="0" step="1">
+                <select id="cornerTLFrac" class="frac-select"></select>
+              </div></label>
             <label class="field"><span class="corner-label">Canto sup. dir.</span>
-              <input type="number" inputmode="decimal" id="cornerTR" placeholder="pol"></label>
+              <div class="frac-input-row">
+                <input type="number" inputmode="numeric" id="cornerTRWhole" placeholder="pol" min="0" step="1">
+                <select id="cornerTRFrac" class="frac-select"></select>
+              </div></label>
             <label class="field"><span class="corner-label">Canto inf. esq.</span>
-              <input type="number" inputmode="decimal" id="cornerBL" placeholder="pol"></label>
+              <div class="frac-input-row">
+                <input type="number" inputmode="numeric" id="cornerBLWhole" placeholder="pol" min="0" step="1">
+                <select id="cornerBLFrac" class="frac-select"></select>
+              </div></label>
             <label class="field"><span class="corner-label">Canto inf. dir.</span>
-              <input type="number" inputmode="decimal" id="cornerBR" placeholder="pol"></label>
+              <div class="frac-input-row">
+                <input type="number" inputmode="numeric" id="cornerBRWhole" placeholder="pol" min="0" step="1">
+                <select id="cornerBRFrac" class="frac-select"></select>
+              </div></label>
           </div>
         </div>
       </fieldset>
@@ -123,16 +141,22 @@
     </div>
     <div class="card">      <div class="grid-2">
         <label class="field">Largura do tile (pol)
-          <input type="number" inputmode="decimal" id="tileWidth" placeholder="ex: 12">
+          <div class="frac-input-row">
+            <input type="number" inputmode="numeric" id="tileWidthWhole" placeholder="12" min="0" step="1">
+            <select id="tileWidthFrac" class="frac-select"></select>
+          </div>
         </label>
         <label class="field">Altura do tile (pol)
-          <input type="number" inputmode="decimal" id="tileHeight" placeholder="ex: 24">
+          <div class="frac-input-row">
+            <input type="number" inputmode="numeric" id="tileHeightWhole" placeholder="24" min="0" step="1">
+            <select id="tileHeightFrac" class="frac-select"></select>
+          </div>
         </label>
       </div>
       <label class="field" style="margin-top:12px;">Espessura do rejunte
         <select id="groutWidth">
           <option value="0.0625">1/16"</option>
-          <option value="0.125" selected>1/8" (mais comum)</option>
+          <option value="0.125" selected>1/8"</option>
           <option value="0.1875">3/16"</option>
           <option value="0.25">1/4"</option>
           <option value="0.3125">5/16"</option>
@@ -239,6 +263,6 @@
 
 </main>
 
-<script src="app.js?v=v27"></script>
+<script src="app.js?v=v28"></script>
 </body>
 </html>

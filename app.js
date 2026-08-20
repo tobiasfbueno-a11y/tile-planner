@@ -1,6 +1,31 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 document.getElementById('appVersion').textContent = APP_VERSION;
+
+// ---------- Whole-inches + fraction measurement fields ----------
+// Every measurement field (wall, tile, crooked corners) pairs a whole-inch
+// number input with a tape-measure-style fraction dropdown (1/16 through
+// 15/16), matching how people actually read a tape measure instead of
+// typing decimals.
+const FRACTIONS = [
+  ['0', '+0'], ['0.0625', '1/16'], ['0.125', '1/8'], ['0.1875', '3/16'],
+  ['0.25', '1/4'], ['0.3125', '5/16'], ['0.375', '3/8'], ['0.4375', '7/16'],
+  ['0.5', '1/2'], ['0.5625', '9/16'], ['0.625', '5/8'], ['0.6875', '11/16'],
+  ['0.75', '3/4'], ['0.8125', '13/16'], ['0.875', '7/8'], ['0.9375', '15/16'],
+];
+document.querySelectorAll('select.frac-select').forEach(sel => {
+  sel.innerHTML = FRACTIONS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+});
+// Reads a whole+fraction pair (e.g. ids 'wallWidthWhole'/'wallWidthFrac')
+// and returns the combined decimal inches, or NaN if the whole part is empty.
+function getFracValue(prefix) {
+  const wholeEl = document.getElementById(prefix + 'Whole');
+  const fracEl = document.getElementById(prefix + 'Frac');
+  if (!wholeEl || wholeEl.value === '') return NaN;
+  const whole = parseFloat(wholeEl.value) || 0;
+  const frac = fracEl ? parseFloat(fracEl.value) || 0 : 0;
+  return whole + frac;
+}
 
 // ---------- State ----------
 const state = {
@@ -101,8 +126,8 @@ document.getElementById('crookedToggle').addEventListener('click', (e) => {
 });
 
 document.getElementById('toStep3').addEventListener('click', () => {
-  const w = parseFloat(document.getElementById('wallWidth').value);
-  const h = parseFloat(document.getElementById('wallHeight').value);
+  const w = getFracValue('wallWidth');
+  const h = getFracValue('wallHeight');
   if (!w || !h) {
     alert('Preencha largura e altura do espaço.');
     return;
@@ -120,12 +145,13 @@ document.getElementById('skipTilePhoto').addEventListener('change', (e) => {
   checkStep3Ready();
 });
 
-['tileWidth', 'tileHeight'].forEach(id => {
+['tileWidthWhole', 'tileWidthFrac', 'tileHeightWhole', 'tileHeightFrac'].forEach(id => {
   document.getElementById(id).addEventListener('input', checkStep3Ready);
+  document.getElementById(id).addEventListener('change', checkStep3Ready);
 });
 function checkStep3Ready() {
-  const tw = parseFloat(document.getElementById('tileWidth').value);
-  const th = parseFloat(document.getElementById('tileHeight').value);
+  const tw = getFracValue('tileWidth');
+  const th = getFracValue('tileHeight');
   const skip = document.getElementById('skipTilePhoto').checked;
   document.getElementById('toStep4').disabled = !(tw && th && (skip || state.tileDataUrl));
 }
@@ -205,10 +231,10 @@ function anchoredSplit(total, unit, minCut, anchor) {
 }
 
 function computeLayout() {
-  const wallWidth = parseFloat(document.getElementById('wallWidth').value);
-  let wallHeight = parseFloat(document.getElementById('wallHeight').value);
-  let tileW = parseFloat(document.getElementById('tileWidth').value);
-  let tileH = parseFloat(document.getElementById('tileHeight').value);
+  const wallWidth = getFracValue('wallWidth');
+  let wallHeight = getFracValue('wallHeight');
+  let tileW = getFracValue('tileWidth');
+  let tileH = getFracValue('tileHeight');
   const groutIn = parseFloat(document.getElementById('groutWidth').value) || 0.125;
   const orientation = document.getElementById('tileOrientation').value; // horizontal | vertical | diamond
   const pattern = document.getElementById('tilePattern').value; // straight | brick | third | thirdMirrored
@@ -218,10 +244,10 @@ function computeLayout() {
   let corners = null;
   let heightVariation = 0;
   if (state.crooked) {
-    const tl = parseFloat(document.getElementById('cornerTL').value) || wallHeight;
-    const tr = parseFloat(document.getElementById('cornerTR').value) || wallHeight;
-    const bl = parseFloat(document.getElementById('cornerBL').value) || wallHeight;
-    const br = parseFloat(document.getElementById('cornerBR').value) || wallHeight;
+    const tl = getFracValue('cornerTL') || wallHeight;
+    const tr = getFracValue('cornerTR') || wallHeight;
+    const bl = getFracValue('cornerBL') || wallHeight;
+    const br = getFracValue('cornerBR') || wallHeight;
     corners = { tl, tr, bl, br };
     const heights = [tl, tr, bl, br];
     wallHeight = heights.reduce((a, b) => a + b, 0) / heights.length;
