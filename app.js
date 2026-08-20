@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- Whole-inches + fraction measurement fields ----------
@@ -1075,30 +1075,71 @@ function drawTaperedCell(ctx, dpr, scale, axis, x, y, w, h, edgeA, edgeB, innerA
 
   // Label each edge with its own exact measurement near that edge — clipped
   // to this piece's own bounding box, so a narrow neighboring piece's label
-  // can't bleed into (and garble together with) this one.
+  // can't bleed into (and garble together with) this one. When the two
+  // edge values are close together (a gentle taper), their labels can
+  // still collide in the middle even though each individually fits — so
+  // measure both and shrink (or drop to one merged label) until there's a
+  // real gap between them, not just individually-non-overflowing text.
   ctx.save();
   ctx.beginPath();
   ctx.rect(x * scale, y * scale, w * scale, h * scale);
   ctx.clip();
   ctx.fillStyle = '#F3E9DE';
-  const fontSize = Math.max(6.5 * dpr, Math.min(w, h) * scale * 0.12);
+  let fontSize = Math.max(6.5 * dpr, Math.min(w, h) * scale * 0.12);
+  const labelA = formatInches(edgeA);
+  const labelB = formatInches(edgeB);
+  const sameValue = labelA === labelB;
   ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = 'center';
-  if (axis === 'h' && w * scale > 46 * dpr) {
-    ctx.textBaseline = 'middle';
-    const yA = innerAtFar ? y + h - edgeA / 2 : y + edgeA / 2;
-    const yB = innerAtFar ? y + h - edgeB / 2 : y + edgeB / 2;
-    ctx.textAlign = 'left';
-    ctx.fillText(formatInches(edgeA), x * scale + 3 * dpr, yA * scale);
-    ctx.textAlign = 'right';
-    ctx.fillText(formatInches(edgeB), (x + w) * scale - 3 * dpr, yB * scale);
-  } else if (axis === 'w' && h * scale > 46 * dpr) {
-    const xA = innerAtFar ? x + w - edgeA / 2 : x + edgeA / 2;
-    const xB = innerAtFar ? x + w - edgeB / 2 : x + edgeB / 2;
-    ctx.textBaseline = 'top';
-    ctx.fillText(formatInches(edgeA), xA * scale, y * scale + 3 * dpr);
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(formatInches(edgeB), xB * scale, (y + h) * scale - 3 * dpr);
+
+  if (axis === 'h' && w * scale > 40 * dpr) {
+    const avail = w * scale - 6 * dpr;
+    const gap = 6 * dpr;
+    if (sameValue) {
+      // Edges round to the same fraction — one centered label reads
+      // cleaner than two identical ones fighting for the same space.
+      let wA = ctx.measureText(labelA).width;
+      if (wA > avail) { fontSize *= avail / wA; ctx.font = `${Math.max(fontSize, 6 * dpr)}px 'JetBrains Mono', monospace`; }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelA, x * scale + w * scale / 2, y * scale + h * scale / 2);
+    } else {
+      let wA = ctx.measureText(labelA).width, wB = ctx.measureText(labelB).width;
+      if (wA + wB + gap > avail) {
+        const shrink = avail / (wA + wB + gap);
+        fontSize = Math.max(fontSize * shrink, 5.5 * dpr);
+        ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+        wA = ctx.measureText(labelA).width; wB = ctx.measureText(labelB).width;
+      }
+      if (wA + wB + gap <= avail) {
+        const yA = innerAtFar ? y + h - edgeA / 2 : y + edgeA / 2;
+        const yB = innerAtFar ? y + h - edgeB / 2 : y + edgeB / 2;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillText(labelA, x * scale + 3 * dpr, yA * scale);
+        ctx.textAlign = 'right';
+        ctx.fillText(labelB, (x + w) * scale - 3 * dpr, yB * scale);
+      }
+      // else: still wouldn't fit even shrunk down to the floor size — skip
+      // rather than force an overlap; the border/corner labels still cover it.
+    }
+  } else if (axis === 'w' && h * scale > 40 * dpr) {
+    const avail = h * scale - 6 * dpr;
+    const gap = 6 * dpr;
+    ctx.textAlign = 'center';
+    if (sameValue) {
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelA, x * scale + w * scale / 2, y * scale + h * scale / 2);
+    } else {
+      const lineGap = fontSize * 1.1;
+      if (lineGap * 2 + gap <= avail) {
+        const xA = innerAtFar ? x + w - edgeA / 2 : x + edgeA / 2;
+        const xB = innerAtFar ? x + w - edgeB / 2 : x + edgeB / 2;
+        ctx.textBaseline = 'top';
+        ctx.fillText(labelA, xA * scale, y * scale + 3 * dpr);
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(labelB, xB * scale, (y + h) * scale - 3 * dpr);
+      }
+    }
   }
   ctx.restore();
 }
