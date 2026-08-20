@@ -271,6 +271,33 @@ label.field {
 .frac-input-row input[type="number"] { flex: 1.3; min-width: 0; }
 .frac-select { flex: 1; min-width: 0; }
 
+.nudge-card { padding: 14px; }
+.nudge-row { display: flex; gap: 14px; align-items: center; }
+.nudge-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 36px);
+  grid-template-rows: repeat(3, 36px);
+  gap: 4px;
+  flex-shrink: 0;
+}
+.nudge-btn {
+  border: 1px solid var(--line);
+  background: #1a1918;
+  color: var(--glaze-bright);
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nudge-btn:active { transform: scale(0.92); background: var(--glaze); color: var(--ink); }
+.nudge-up { grid-column: 2; grid-row: 1; }
+.nudge-left { grid-column: 1; grid-row: 2; }
+.nudge-reset { grid-column: 2; grid-row: 2; font-size: 13px; color: var(--porcelain-dim); }
+.nudge-right { grid-column: 3; grid-row: 2; }
+.nudge-down { grid-column: 2; grid-row: 3; }
+
 .hint {
   font-size: 11px;
   color: var(--porcelain-dim);

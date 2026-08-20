@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=v31">
+<link rel="stylesheet" href="style.css?v=v32">
 </head>
 <body>
 
@@ -239,6 +239,23 @@
       </div>
       <p class="micro-note" id="buyTilesNote"></p>
 
+      <div class="card nudge-card">
+        <h3 style="font-size:13px; margin-bottom:10px;">Empurrar o layout</h3>
+        <div class="nudge-row">
+          <div class="nudge-dpad">
+            <button class="nudge-btn nudge-up" id="nudgeUp" aria-label="Empurrar pra cima">▲</button>
+            <button class="nudge-btn nudge-left" id="nudgeLeft" aria-label="Empurrar pra esquerda">◀</button>
+            <button class="nudge-btn nudge-reset" id="nudgeReset" aria-label="Redefinir">↺</button>
+            <button class="nudge-btn nudge-right" id="nudgeRight" aria-label="Empurrar pra direita">▶</button>
+            <button class="nudge-btn nudge-down" id="nudgeDown" aria-label="Empurrar pra baixo">▼</button>
+          </div>
+          <label class="field" style="flex:1;">A cada toque
+            <select id="nudgeStep" class="frac-select"></select>
+          </label>
+        </div>
+        <p class="micro-note" id="nudgeReadout" style="margin-top:8px;"></p>
+      </div>
+
       <div class="result-canvas-wrap">
         <canvas id="layoutCanvas"></canvas>
       </div>
@@ -265,6 +282,6 @@
 
 </main>
 
-<script src="app.js?v=v31"></script>
+<script src="app.js?v=v32"></script>
 </body>
 </html>
