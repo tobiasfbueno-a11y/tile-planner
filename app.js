@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- Whole-inches + fraction measurement fields ----------
@@ -374,40 +374,43 @@ function computeLayout() {
   let remH = rowSplit.rem;
   let edgeCutHStart = rowSplit.edgeStart; // at the floor
   let edgeCutHEnd = rowSplit.edgeEnd;     // at the ceiling/top
-  // Manual vertical nudge: shift material between the top/bottom edges
-  // (crossing whole-tile boundaries as needed) without touching the
-  // crooked-space taper math, which still starts from these base values.
-  if (state.nudgeY && !state.crooked) {
-    const n = applyNudge(edgeCutHStart, edgeCutHEnd, rowsFull, effH, state.nudgeY);
-    edgeCutHStart = n.edgeStart; edgeCutHEnd = n.edgeEnd; rowsFull = n.fullCount;
-  }
+  const vertRedistributed = !!rowSplit.redistributed;
+
   // Crooked space: the taper means one side of the wall is always shorter
   // than the other. If the AVERAGE-based cut looks comfortable but the
   // narrower side's actual local cut would come out under MIN_CUT_IN, pull
   // one more full row out so every point along the taper — including the
   // worst (narrowest) one — clears the minimum. Never leave one lone
-  // thin cut standing at the short end.
+  // thin cut standing at the short end. This runs BEFORE the manual nudge
+  // below, so a push doesn't get silently overwritten by this safety check.
+  const splitByAnchorH = (rem, anchorNorm) => anchorNorm === 'center'
+    ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
+    : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
   if (state.crooked && sides && !diagonalMode) {
-    const splitByAnchor = (rem, anchorNorm) => anchorNorm === 'center'
-      ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
-      : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
     const worstHeight = Math.min(sides.left, sides.right);
     let guard = 0;
     while (rowsFull > 0 && guard < 50) {
       const worstRem = worstHeight - rowsFull * effH;
-      const worstEdges = splitByAnchor(worstRem, vertAnchorNorm);
+      const worstEdges = splitByAnchorH(worstRem, vertAnchorNorm);
       const worstSingle = Math.max(worstEdges.edgeStart, worstEdges.edgeEnd);
       if (worstSingle <= 0.05 || worstSingle >= MIN_CUT_IN - 0.01) break;
       rowsFull -= 1;
       guard++;
     }
     remH = +(wallHeight - rowsFull * effH).toFixed(3);
-    const avgEdges = splitByAnchor(remH, vertAnchorNorm);
+    const avgEdges = splitByAnchorH(remH, vertAnchorNorm);
     edgeCutHStart = avgEdges.edgeStart;
     edgeCutHEnd = avgEdges.edgeEnd;
   }
+  // Manual vertical nudge: shift material between the top/bottom edges
+  // (crossing whole-tile boundaries as needed), applied last so it's the
+  // final word — including on a crooked space, on top of whatever safety
+  // adjustment the check above already made.
+  if (state.nudgeY) {
+    const n = applyNudge(edgeCutHStart, edgeCutHEnd, rowsFull, effH, state.nudgeY);
+    edgeCutHStart = n.edgeStart; edgeCutHEnd = n.edgeEnd; rowsFull = n.fullCount;
+  }
   const hasHorizontalCut = (edgeCutHStart > 0.05) || (edgeCutHEnd > 0.05);
-  const vertRedistributed = !!rowSplit.redistributed;
   const totalRows = rowsFull + (edgeCutHStart > 0.05 ? 1 : 0) + (edgeCutHEnd > 0.05 ? 1 : 0);
 
   let colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, totalCols, totalTiles, colsRange = null;
@@ -423,33 +426,35 @@ function computeLayout() {
     remW = colSplit.rem;
     edgeCutWStart = colSplit.edgeStart; // left side
     edgeCutWEnd = colSplit.edgeEnd;     // right side
-    if (state.nudgeX && !state.crooked) {
-      const n = applyNudge(edgeCutWStart, edgeCutWEnd, colsFull, effW, state.nudgeX);
-      edgeCutWStart = n.edgeStart; edgeCutWEnd = n.edgeEnd; colsFull = n.fullCount;
-    }
     horizRedistributed = !!colSplit.redistributed;
 
     // Same worst-case-side guard as the height axis: if the wall's width
     // tapers between top and bottom, make sure even the narrower side's
-    // local cut clears MIN_CUT_IN before settling on a column count.
+    // local cut clears MIN_CUT_IN before settling on a column count. Runs
+    // BEFORE the manual nudge below, so a push isn't silently overwritten.
+    const splitByAnchorW = (rem, anchorNorm) => anchorNorm === 'center'
+      ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
+      : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
     if (state.crooked && sides && !diagonalMode) {
-      const splitByAnchor = (rem, anchorNorm) => anchorNorm === 'center'
-        ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
-        : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
       const worstWidth = Math.min(sides.top, sides.bottom);
       let guard = 0;
       while (colsFull > 0 && guard < 50) {
         const worstRem = worstWidth - colsFull * effW;
-        const worstEdges = splitByAnchor(worstRem, horizAnchorNorm);
+        const worstEdges = splitByAnchorW(worstRem, horizAnchorNorm);
         const worstSingle = Math.max(worstEdges.edgeStart, worstEdges.edgeEnd);
         if (worstSingle <= 0.05 || worstSingle >= MIN_CUT_IN - 0.01) break;
         colsFull -= 1;
         guard++;
       }
       remW = +(wallWidth - colsFull * effW).toFixed(3);
-      const avgEdges = splitByAnchor(remW, horizAnchorNorm);
+      const avgEdges = splitByAnchorW(remW, horizAnchorNorm);
       edgeCutWStart = avgEdges.edgeStart;
       edgeCutWEnd = avgEdges.edgeEnd;
+    }
+    // Manual horizontal nudge, applied last (see the height-axis version above).
+    if (state.nudgeX) {
+      const n = applyNudge(edgeCutWStart, edgeCutWEnd, colsFull, effW, state.nudgeX);
+      edgeCutWStart = n.edgeStart; edgeCutWEnd = n.edgeEnd; colsFull = n.fullCount;
     }
     hasVerticalCut = (edgeCutWStart > 0.05) || (edgeCutWEnd > 0.05);
     totalCols = colsFull + (edgeCutWStart > 0.05 ? 1 : 0) + (edgeCutWEnd > 0.05 ? 1 : 0);
@@ -592,7 +597,7 @@ function rowOffset(pattern, rowIndex, effW) {
   // A horizontal nudge shifts the whole running-bond phase left/right,
   // wrapped into the 0..effW range (same idea as sliding where the first
   // course starts).
-  if (state.nudgeX && !state.crooked && effW > 0) {
+  if (state.nudgeX && effW > 0) {
     base = ((base + state.nudgeX) % effW + effW) % effW;
   }
   return base;
@@ -1068,27 +1073,32 @@ function drawTaperedCell(ctx, dpr, scale, axis, x, y, w, h, edgeA, edgeB, innerA
   ctx.fill();
   ctx.stroke();
 
-  // Label each edge with its own exact measurement near that edge.
+  // Label each edge with its own exact measurement near that edge — clipped
+  // to this piece's own bounding box, so a narrow neighboring piece's label
+  // can't bleed into (and garble together with) this one.
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(x * scale, y * scale, w * scale, h * scale);
+  ctx.clip();
   ctx.fillStyle = '#F3E9DE';
-  const fontSize = Math.max(7 * dpr, Math.min(w, h) * scale * 0.14);
+  const fontSize = Math.max(6.5 * dpr, Math.min(w, h) * scale * 0.12);
   ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
   ctx.textAlign = 'center';
-  if (axis === 'h' && w * scale > 30 * dpr) {
+  if (axis === 'h' && w * scale > 46 * dpr) {
     ctx.textBaseline = 'middle';
     const yA = innerAtFar ? y + h - edgeA / 2 : y + edgeA / 2;
     const yB = innerAtFar ? y + h - edgeB / 2 : y + edgeB / 2;
     ctx.textAlign = 'left';
-    ctx.fillText(formatInches(edgeA), x * scale + 4 * dpr, yA * scale);
+    ctx.fillText(formatInches(edgeA), x * scale + 3 * dpr, yA * scale);
     ctx.textAlign = 'right';
-    ctx.fillText(formatInches(edgeB), (x + w) * scale - 4 * dpr, yB * scale);
-  } else if (axis === 'w' && h * scale > 30 * dpr) {
+    ctx.fillText(formatInches(edgeB), (x + w) * scale - 3 * dpr, yB * scale);
+  } else if (axis === 'w' && h * scale > 46 * dpr) {
     const xA = innerAtFar ? x + w - edgeA / 2 : x + edgeA / 2;
     const xB = innerAtFar ? x + w - edgeB / 2 : x + edgeB / 2;
     ctx.textBaseline = 'top';
-    ctx.fillText(formatInches(edgeA), xA * scale, y * scale + 4 * dpr);
+    ctx.fillText(formatInches(edgeA), xA * scale, y * scale + 3 * dpr);
     ctx.textBaseline = 'bottom';
-    ctx.fillText(formatInches(edgeB), xB * scale, (y + h) * scale - 4 * dpr);
+    ctx.fillText(formatInches(edgeB), xB * scale, (y + h) * scale - 3 * dpr);
   }
   ctx.restore();
 }
