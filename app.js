@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v30';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- Whole-inches + fraction measurement fields ----------
@@ -123,14 +123,72 @@ document.getElementById('crookedToggle').addEventListener('click', (e) => {
   state.crooked = !state.crooked;
   e.target.classList.toggle('on', state.crooked);
   document.getElementById('crookedFields').style.display = state.crooked ? 'block' : 'none';
+  document.getElementById('squareFields').style.display = state.crooked ? 'none' : 'block';
+  if (state.crooked) drawShapeIllustration();
 });
 
+// Live-updating illustrative sketch of the 4-sided space. Not a precise
+// geometric solve (4 side lengths alone don't fully determine a
+// quadrilateral's angles) — it's a rough, proportion-aware sketch so the
+// numbered sides visually match the numbered input fields below it.
+['side1', 'side2', 'side3', 'side4'].forEach(prefix => {
+  document.getElementById(prefix + 'Whole').addEventListener('input', drawShapeIllustration);
+  document.getElementById(prefix + 'Frac').addEventListener('change', drawShapeIllustration);
+});
+
+function drawShapeIllustration() {
+  const s1 = getFracValue('side1') || 80; // top
+  const s2 = getFracValue('side2') || 96; // right
+  const s3 = getFracValue('side3') || 80; // bottom
+  const s4 = getFracValue('side4') || 96; // left
+
+  const avgW = (s1 + s3) / 2;
+  const avgH = (s2 + s4) / 2;
+  const vbW = 240, vbH = 200, pad = 30;
+  const drawW = vbW - pad * 2, drawH = vbH - pad * 2;
+  const scale = Math.min(drawW / avgW, drawH / avgH);
+
+  // Center each edge's width/height around the shared average, and bow the
+  // left/right edges to reflect side2 vs side4 differing — a simple,
+  // honest sketch rather than a fully solved quadrilateral.
+  const topW = s1 * scale, bottomW = s3 * scale;
+  const rightH = s2 * scale, leftH = s4 * scale;
+  const cx = vbW / 2;
+  const topY = pad + (drawH - Math.max(rightH, leftH)) / 2;
+
+  const tl = { x: cx - topW / 2, y: topY };
+  const tr = { x: cx + topW / 2, y: topY };
+  const bl = { x: cx - bottomW / 2, y: topY + leftH };
+  const br = { x: cx + bottomW / 2, y: topY + rightH };
+
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const m1 = mid(tl, tr), m2 = mid(tr, br), m3 = mid(bl, br), m4 = mid(tl, bl);
+
+  const svg = document.getElementById('shapeSvg');
+  svg.innerHTML = `
+    <polygon points="${tl.x},${tl.y} ${tr.x},${tr.y} ${br.x},${br.y} ${bl.x},${bl.y}"
+      fill="rgba(62,124,122,0.25)" stroke="#5AABA8" stroke-width="2"/>
+    <text x="${m1.x}" y="${m1.y - 8}" text-anchor="middle" fill="#F3E9DE" font-size="13" font-family="JetBrains Mono, monospace">①</text>
+    <text x="${m2.x + 12}" y="${m2.y}" text-anchor="start" fill="#F3E9DE" font-size="13" font-family="JetBrains Mono, monospace">②</text>
+    <text x="${m3.x}" y="${m3.y + 18}" text-anchor="middle" fill="#F3E9DE" font-size="13" font-family="JetBrains Mono, monospace">③</text>
+    <text x="${m4.x - 12}" y="${m4.y}" text-anchor="end" fill="#F3E9DE" font-size="13" font-family="JetBrains Mono, monospace">④</text>
+  `;
+}
+
 document.getElementById('toStep3').addEventListener('click', () => {
-  const w = getFracValue('wallWidth');
-  const h = getFracValue('wallHeight');
-  if (!w || !h) {
-    alert('Preencha largura e altura do espaço.');
-    return;
+  if (state.crooked) {
+    const sides = ['side1', 'side2', 'side3', 'side4'].map(getFracValue);
+    if (sides.some(v => !v)) {
+      alert('Preencha os 4 lados do espaço.');
+      return;
+    }
+  } else {
+    const w = getFracValue('wallWidth');
+    const h = getFracValue('wallHeight');
+    if (!w || !h) {
+      alert('Preencha largura e altura do espaço.');
+      return;
+    }
   }
   goTo('screen-tile');
 });
@@ -231,7 +289,7 @@ function anchoredSplit(total, unit, minCut, anchor) {
 }
 
 function computeLayout() {
-  const wallWidth = getFracValue('wallWidth');
+  let wallWidth = getFracValue('wallWidth');
   let wallHeight = getFracValue('wallHeight');
   let tileW = getFracValue('tileWidth');
   let tileH = getFracValue('tileHeight');
@@ -241,17 +299,23 @@ function computeLayout() {
   const horizAnchor = document.getElementById('horizAnchor').value; // left | right | center
   const vertAnchor = document.getElementById('vertAnchor').value; // bottom | top | center
 
-  let corners = null;
-  let heightVariation = 0;
+  let sides = null;
+  let widthVariation = 0, heightVariation = 0;
   if (state.crooked) {
-    const tl = getFracValue('cornerTL') || wallHeight;
-    const tr = getFracValue('cornerTR') || wallHeight;
-    const bl = getFracValue('cornerBL') || wallHeight;
-    const br = getFracValue('cornerBR') || wallHeight;
-    corners = { tl, tr, bl, br };
-    const heights = [tl, tr, bl, br];
-    wallHeight = heights.reduce((a, b) => a + b, 0) / heights.length;
-    heightVariation = Math.max(...heights) - Math.min(...heights);
+    // 4 measured sides going clockwise from the top: side1=top, side2=right,
+    // side3=bottom, side4=left. Width comes from the top/bottom pair,
+    // height from the left/right pair — this replaces the old "4 corner
+    // heights" model with something that matches how the illustration
+    // above (and a tape measure) actually works: measure each side.
+    const s1 = getFracValue('side1'); // top width
+    const s2 = getFracValue('side2'); // right height
+    const s3 = getFracValue('side3'); // bottom width
+    const s4 = getFracValue('side4'); // left height
+    sides = { top: s1, right: s2, bottom: s3, left: s4 };
+    wallWidth = (s1 + s3) / 2;
+    wallHeight = (s2 + s4) / 2;
+    widthVariation = Math.abs(s1 - s3);
+    heightVariation = Math.abs(s2 - s4);
   }
 
   // Orientation controls which side of the tile runs horizontally, regardless
@@ -341,7 +405,7 @@ function computeLayout() {
     colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, colsRange,
     rowsFull, remH, edgeCutHStart, edgeCutHEnd, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
-    thinSliverWarning, corners, heightVariation,
+    thinSliverWarning, sides, widthVariation, heightVariation,
     vertRedistributed, horizRedistributed,
     effW, effH,
   };
@@ -480,28 +544,36 @@ function drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad) {
   ctx.fillStyle = '#B9B2A8';
   ctx.textBaseline = 'middle';
 
-  if (layout.corners) {
-    ctx.font = `${10 * dpr}px 'JetBrains Mono', monospace`;
-    const c = layout.corners;
-    ctx.textAlign = 'left';
-    ctx.fillText(`${c.tl.toFixed(1)}"`, left + 4 * dpr, top + 10 * dpr);
-    ctx.textAlign = 'right';
-    ctx.fillText(`${c.tr.toFixed(1)}"`, left + gridW - 4 * dpr, top + 10 * dpr);
-    ctx.textAlign = 'left';
-    ctx.fillText(`${c.bl.toFixed(1)}"`, left + 4 * dpr, top + gridH - 10 * dpr);
-    ctx.textAlign = 'right';
-    ctx.fillText(`${c.br.toFixed(1)}"`, left + gridW - 4 * dpr, top + gridH - 10 * dpr);
-  } else {
+  if (layout.sides) {
+    // Crooked space: show each of the 4 measured sides along its matching
+    // edge, numbered ①-④ the same way as the illustration on the
+    // measurements screen, instead of one averaged number per axis.
     ctx.font = `${11 * dpr}px 'JetBrains Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`① ${layout.sides.top.toFixed(1)}"`, left + gridW / 2, top - 14 * dpr);
+    ctx.fillText(`③ ${layout.sides.bottom.toFixed(1)}"`, left + gridW / 2, top + gridH + 14 * dpr);
     ctx.save();
     ctx.translate(left - 10 * dpr, top + gridH / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center';
-    ctx.fillText(`${layout.wallHeight.toFixed(1)}"`, 0, 0);
+    ctx.fillText(`④ ${layout.sides.left.toFixed(1)}"`, 0, 0);
     ctx.restore();
+    ctx.save();
+    ctx.translate(left + gridW + 10 * dpr, top + gridH / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillText(`② ${layout.sides.right.toFixed(1)}"`, 0, 0);
+    ctx.restore();
+    ctx.restore();
+    return;
   }
 
   ctx.font = `${11 * dpr}px 'JetBrains Mono', monospace`;
+  ctx.save();
+  ctx.translate(left - 10 * dpr, top + gridH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText(`${layout.wallHeight.toFixed(1)}"`, 0, 0);
+  ctx.restore();
+
   ctx.textAlign = 'center';
   ctx.fillText(`${layout.wallWidth.toFixed(1)}"`, left + gridW / 2, top - 14 * dpr);
   ctx.restore();
@@ -854,8 +926,11 @@ async function runCalculation() {
   if (layout.thinSliverWarning) {
     note += ` ⚠️ Mesmo puxando um tile a menos, não foi possível manter todos os cortes acima de ${MIN_CUT_IN}" — o espaço é pequeno demais em relação ao tamanho do tile escolhido. Considere um tile menor.`;
   }
-  if (state.crooked && layout.heightVariation > 0.4) {
-    note += ` O espaço varia ${layout.heightVariation.toFixed(2)}" entre os cantos — use nível a laser, comece a primeira fileira nivelada a partir do ponto mais alto, e ajuste os cortes da última fileira individualmente conforme a inclinação real.`;
+  if (state.crooked && (layout.heightVariation > 0.4 || layout.widthVariation > 0.4)) {
+    const parts = [];
+    if (layout.widthVariation > 0.4) parts.push(`a largura varia ${layout.widthVariation.toFixed(2)}" entre o topo e a base`);
+    if (layout.heightVariation > 0.4) parts.push(`a altura varia ${layout.heightVariation.toFixed(2)}" entre a esquerda e a direita`);
+    note += ` ${parts.join(', e ')}. Use nível a laser, comece a primeira fileira nivelada a partir do lado mais reto, e ajuste os cortes das bordas individualmente conforme a inclinação real.`;
   }
   document.getElementById('recommendationNote').textContent = note;
 

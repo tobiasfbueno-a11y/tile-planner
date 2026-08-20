@@ -254,6 +254,16 @@ label.field {
   color: var(--porcelain-dim);
 }
 
+.shape-illustration {
+  background: #1a1918;
+  border-radius: 10px;
+  padding: 10px;
+}
+.shape-illustration svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
 .frac-input-row {
   display: flex;
   gap: 6px;
