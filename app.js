@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- Whole-inches + fraction measurement fields ----------
@@ -371,7 +371,7 @@ function computeLayout() {
   const vertAnchorNorm = vertAnchor === 'bottom' ? 'start' : vertAnchor === 'top' ? 'end' : 'center';
   const rowSplit = anchoredSplit(wallHeight, effH, MIN_CUT_IN, vertAnchorNorm);
   let rowsFull = rowSplit.n;
-  const remH = rowSplit.rem;
+  let remH = rowSplit.rem;
   let edgeCutHStart = rowSplit.edgeStart; // at the floor
   let edgeCutHEnd = rowSplit.edgeEnd;     // at the ceiling/top
   // Manual vertical nudge: shift material between the top/bottom edges
@@ -381,13 +381,38 @@ function computeLayout() {
     const n = applyNudge(edgeCutHStart, edgeCutHEnd, rowsFull, effH, state.nudgeY);
     edgeCutHStart = n.edgeStart; edgeCutHEnd = n.edgeEnd; rowsFull = n.fullCount;
   }
+  // Crooked space: the taper means one side of the wall is always shorter
+  // than the other. If the AVERAGE-based cut looks comfortable but the
+  // narrower side's actual local cut would come out under MIN_CUT_IN, pull
+  // one more full row out so every point along the taper — including the
+  // worst (narrowest) one — clears the minimum. Never leave one lone
+  // thin cut standing at the short end.
+  if (state.crooked && sides && !diagonalMode) {
+    const splitByAnchor = (rem, anchorNorm) => anchorNorm === 'center'
+      ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
+      : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
+    const worstHeight = Math.min(sides.left, sides.right);
+    let guard = 0;
+    while (rowsFull > 0 && guard < 50) {
+      const worstRem = worstHeight - rowsFull * effH;
+      const worstEdges = splitByAnchor(worstRem, vertAnchorNorm);
+      const worstSingle = Math.max(worstEdges.edgeStart, worstEdges.edgeEnd);
+      if (worstSingle <= 0.05 || worstSingle >= MIN_CUT_IN - 0.01) break;
+      rowsFull -= 1;
+      guard++;
+    }
+    remH = +(wallHeight - rowsFull * effH).toFixed(3);
+    const avgEdges = splitByAnchor(remH, vertAnchorNorm);
+    edgeCutHStart = avgEdges.edgeStart;
+    edgeCutHEnd = avgEdges.edgeEnd;
+  }
   const hasHorizontalCut = (edgeCutHStart > 0.05) || (edgeCutHEnd > 0.05);
   const vertRedistributed = !!rowSplit.redistributed;
   const totalRows = rowsFull + (edgeCutHStart > 0.05 ? 1 : 0) + (edgeCutHEnd > 0.05 ? 1 : 0);
 
   let colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, totalCols, totalTiles, colsRange = null;
   let horizRedistributed = false;
-  let colTaper = null, rowTaper = null;
+  let heightTaperBottom = null, heightTaperTop = null, rowTaper = null;
 
   if (pattern === 'straight' || diagonalMode) {
     // horizAnchor: 'left'/'right' flush a full tile against that wall; the
@@ -402,22 +427,40 @@ function computeLayout() {
       const n = applyNudge(edgeCutWStart, edgeCutWEnd, colsFull, effW, state.nudgeX);
       edgeCutWStart = n.edgeStart; edgeCutWEnd = n.edgeEnd; colsFull = n.fullCount;
     }
-    hasVerticalCut = (edgeCutWStart > 0.05) || (edgeCutWEnd > 0.05);
     horizRedistributed = !!colSplit.redistributed;
+
+    // Same worst-case-side guard as the height axis: if the wall's width
+    // tapers between top and bottom, make sure even the narrower side's
+    // local cut clears MIN_CUT_IN before settling on a column count.
+    if (state.crooked && sides && !diagonalMode) {
+      const splitByAnchor = (rem, anchorNorm) => anchorNorm === 'center'
+        ? { edgeStart: Math.max(rem / 2, 0), edgeEnd: Math.max(rem / 2, 0) }
+        : { edgeStart: anchorNorm === 'end' ? Math.max(rem, 0) : 0, edgeEnd: anchorNorm === 'start' ? Math.max(rem, 0) : 0 };
+      const worstWidth = Math.min(sides.top, sides.bottom);
+      let guard = 0;
+      while (colsFull > 0 && guard < 50) {
+        const worstRem = worstWidth - colsFull * effW;
+        const worstEdges = splitByAnchor(worstRem, horizAnchorNorm);
+        const worstSingle = Math.max(worstEdges.edgeStart, worstEdges.edgeEnd);
+        if (worstSingle <= 0.05 || worstSingle >= MIN_CUT_IN - 0.01) break;
+        colsFull -= 1;
+        guard++;
+      }
+      remW = +(wallWidth - colsFull * effW).toFixed(3);
+      const avgEdges = splitByAnchor(remW, horizAnchorNorm);
+      edgeCutWStart = avgEdges.edgeStart;
+      edgeCutWEnd = avgEdges.edgeEnd;
+    }
+    hasVerticalCut = (edgeCutWStart > 0.05) || (edgeCutWEnd > 0.05);
     totalCols = colsFull + (edgeCutWStart > 0.05 ? 1 : 0) + (edgeCutWEnd > 0.05 ? 1 : 0);
     totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
 
-    // Crooked space + straight pattern: the wall isn't actually one uniform
-    // height/width — it tapers between the two measured sides. Using one
-    // averaged cut everywhere means the "main" edge you chose to keep flush
-    // won't really be flush at every column. The fix is the standard
-    // diminishing-course technique: keep the same number of FULL tile rows
-    // everywhere (so courses stay level), but let the CUT piece at each
-    // column/row take its own real size — and rather than one flat height
-    // per piece (a "staircase" edge), compute the taper at BOTH edges of
-    // each piece so adjacent pieces meet exactly where the last one left
-    // off, forming one continuous sloped cut line, the way an installer
-    // would actually angle-cut a run of tiles along a crooked wall.
+    // Crooked space + straight pattern: the wall's WIDTH also tapers (top
+    // vs bottom), so the left/right cut column widths vary per row too —
+    // same sloped-edge, meets-exactly-where-the-last-one-left-off approach
+    // as the height taper below, just on the other axis. Offset patterns
+    // (brick/1-3) don't get this: their horizontal cut position is
+    // dictated by the running pattern itself, not a left/right anchor.
     if (state.crooked && sides && !diagonalMode) {
       const splitLocal = (localTotal, fullSpan, anchorNorm) => {
         const localRem = +(localTotal - fullSpan).toFixed(3);
@@ -430,27 +473,7 @@ function computeLayout() {
           edgeEnd: anchorNorm === 'start' ? Math.max(localRem, 0) : 0,
         };
       };
-      const heightAtX = (x) => sides.left + (sides.right - sides.left) * (wallWidth > 0 ? x / wallWidth : 0.5);
       const widthAtY = (y) => sides.top + (sides.bottom - sides.top) * (wallHeight > 0 ? y / wallHeight : 0.5);
-
-      const colsForTaper = [];
-      let cx = 0;
-      if (edgeCutWStart > 0.05) { colsForTaper.push({ x0: cx, x1: cx + edgeCutWStart }); cx += edgeCutWStart; }
-      for (let i = 0; i < colsFull; i++) { colsForTaper.push({ x0: cx, x1: cx + tileW, full: true }); cx += tileW; }
-      if (edgeCutWEnd > 0.05) { colsForTaper.push({ x0: cx, x1: cx + edgeCutWEnd }); cx += edgeCutWEnd; }
-
-      colTaper = colsForTaper.map(c => {
-        const left = splitLocal(heightAtX(c.x0), rowsFull * effH, vertAnchorNorm);
-        const right = splitLocal(heightAtX(c.x1), rowsFull * effH, vertAnchorNorm);
-        return {
-          x: c.x0, w: c.x1 - c.x0,
-          edgeCutHStartLeft: left.edgeStart, edgeCutHStartRight: right.edgeStart,
-          edgeCutHEndLeft: left.edgeEnd, edgeCutHEndRight: right.edgeEnd,
-          // Center-based values kept for anything that still wants a single number (labels, warnings).
-          edgeCutHStart: (left.edgeStart + right.edgeStart) / 2,
-          edgeCutHEnd: (left.edgeEnd + right.edgeEnd) / 2,
-        };
-      });
 
       const rowsForTaper = [];
       let cy = 0;
@@ -493,6 +516,56 @@ function computeLayout() {
     totalTiles = sumCols;
   }
 
+  // Height taper (top/bottom cut ROW pieces sloping to match the wall's
+  // real crookedness) applies regardless of pattern — running-bond patterns
+  // still stack the same level courses vertically, just with a different
+  // column layout per row. Compute it here, generically, using whatever
+  // column layout each cut row would actually use (straight or offset).
+  if (state.crooked && sides && !diagonalMode && (edgeCutHStart > 0.05 || edgeCutHEnd > 0.05)) {
+    const splitLocal = (localTotal, fullSpan, anchorNorm) => {
+      const localRem = +(localTotal - fullSpan).toFixed(3);
+      if (anchorNorm === 'center') {
+        const e = +(localRem / 2).toFixed(3);
+        return { edgeStart: Math.max(e, 0), edgeEnd: Math.max(e, 0) };
+      }
+      return {
+        edgeStart: anchorNorm === 'end' ? Math.max(localRem, 0) : 0,
+        edgeEnd: anchorNorm === 'start' ? Math.max(localRem, 0) : 0,
+      };
+    };
+    const heightAtX = (x) => sides.left + (sides.right - sides.left) * (wallWidth > 0 ? x / wallWidth : 0.5);
+    const piecesForRow = (courseIdx) => {
+      const list = [];
+      let cx = 0;
+      if (pattern === 'straight') {
+        if (edgeCutWStart > 0.05) { list.push({ x0: cx, x1: cx + edgeCutWStart }); cx += edgeCutWStart; }
+        for (let i = 0; i < colsFull; i++) { list.push({ x0: cx, x1: cx + tileW, full: true }); cx += tileW; }
+        if (edgeCutWEnd > 0.05) { list.push({ x0: cx, x1: cx + edgeCutWEnd }); cx += edgeCutWEnd; }
+      } else {
+        const offset = rowOffset(pattern, courseIdx, effW);
+        const cols = buildRowColumns(effW, wallWidth, offset);
+        for (const c of cols) { list.push({ x0: cx, x1: cx + c.width, full: !c.cut }); cx += c.width; }
+      }
+      return list;
+    };
+
+    if (edgeCutHStart > 0.05) {
+      heightTaperBottom = piecesForRow(0).map(p => {
+        const left = splitLocal(heightAtX(p.x0), rowsFull * effH, vertAnchorNorm);
+        const right = splitLocal(heightAtX(p.x1), rowsFull * effH, vertAnchorNorm);
+        return { x0: p.x0, x1: p.x1, full: p.full, edgeLeft: left.edgeStart, edgeRight: right.edgeStart };
+      });
+    }
+    if (edgeCutHEnd > 0.05) {
+      const topCourseIdx = (edgeCutHStart > 0.05 ? 1 : 0) + rowsFull;
+      heightTaperTop = piecesForRow(topCourseIdx).map(p => {
+        const left = splitLocal(heightAtX(p.x0), rowsFull * effH, vertAnchorNorm);
+        const right = splitLocal(heightAtX(p.x1), rowsFull * effH, vertAnchorNorm);
+        return { x0: p.x0, x1: p.x1, full: p.full, edgeLeft: left.edgeEnd, edgeRight: right.edgeEnd };
+      });
+    }
+  }
+
   const smallestVertCut = Math.min(...[edgeCutWStart, edgeCutWEnd].filter(v => v > 0.05), Infinity);
   const smallestHorizCut = Math.min(...[edgeCutHStart, edgeCutHEnd].filter(v => v > 0.05), Infinity);
   const thinSliverWarning = smallestVertCut < MIN_CUT_IN - 0.01 || smallestHorizCut < MIN_CUT_IN - 0.01;
@@ -504,7 +577,7 @@ function computeLayout() {
     rowsFull, remH, edgeCutHStart, edgeCutHEnd, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
     thinSliverWarning, sides, widthVariation, heightVariation,
-    vertRedistributed, horizRedistributed, colTaper, rowTaper,
+    vertRedistributed, horizRedistributed, heightTaperBottom, heightTaperTop, rowTaper,
     effW, effH,
   };
 }
@@ -817,14 +890,16 @@ function drawLayout(layout) {
   // With a tapered (crooked-space) layout, some columns/rows are taller or
   // wider than the average — size the canvas to the tallest/widest local
   // measurement so nothing gets clipped off.
-  const maxColCutH = layout.colTaper
-    ? Math.max(0, ...layout.colTaper.flatMap(c => [c.edgeCutHStartLeft, c.edgeCutHStartRight])) + Math.max(0, ...layout.colTaper.flatMap(c => [c.edgeCutHEndLeft, c.edgeCutHEndRight]))
-    : 0;
+  const maxColCutH = (heightTaper) => {
+    if (!heightTaper) return 0;
+    return Math.max(0, ...heightTaper.flatMap(p => [p.edgeLeft, p.edgeRight]));
+  };
   const maxRowCutW = layout.rowTaper
     ? Math.max(0, ...layout.rowTaper.flatMap(r => [r.edgeCutWStartTop, r.edgeCutWStartBottom])) + Math.max(0, ...layout.rowTaper.flatMap(r => [r.edgeCutWEndTop, r.edgeCutWEndBottom]))
     : 0;
+  const extraH = maxColCutH(layout.heightTaperBottom) + maxColCutH(layout.heightTaperTop);
   const drawWidth = layout.rowTaper ? Math.max(layout.wallWidth, layout.colsFull * layout.tileW + maxRowCutW) : layout.wallWidth;
-  const drawHeight = layout.colTaper ? Math.max(layout.wallHeight, layout.rowsFull * layout.tileH + maxColCutH) : layout.wallHeight;
+  const drawHeight = (layout.heightTaperBottom || layout.heightTaperTop) ? Math.max(layout.wallHeight, layout.rowsFull * layout.tileH + extraH) : layout.wallHeight;
   const scale = Math.max((displayWidth - padding * 2) / drawWidth, 2) * dpr;
   const pad = padding * dpr;
   // The wall itself is always the real rectangle — diamond mode never
@@ -879,7 +954,7 @@ function drawLayout(layout) {
 
   ctx.translate(-drawWidth * scale / 2, -drawHeight * scale / 2);
 
-  if (layout.colTaper && layout.pattern === 'straight') {
+  if ((layout.heightTaperBottom || layout.heightTaperTop || layout.rowTaper) && layout.pattern === 'straight') {
     drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeight);
     ctx.restore();
     drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad);
@@ -914,9 +989,29 @@ function drawLayout(layout) {
       colWidths = buildRowColumns(layout.effW, layout.wallWidth, offset);
     }
 
+    // Running-bond (brick/1-3) cut rows on a crooked wall: the height still
+    // tapers left-to-right same as a straight pattern would, using
+    // whichever piece list matches this specific row's own column layout
+    // (computed in computeLayout with the same offset, so it lines up
+    // piece-for-piece with colWidths here).
+    const isBottomCutRow = isCutRow && idx === 0 && layout.edgeCutHStart > 0.05;
+    const isTopCutRow = isCutRow && idx === rowsBU.length - 1 && layout.edgeCutHEnd > 0.05;
+    const taperPieces = isBottomCutRow ? layout.heightTaperBottom : isTopCutRow ? layout.heightTaperTop : null;
+
     let x = 0;
-    for (const col of colWidths) {
-      drawTileCell(ctx, dpr, scale, x, y, col.width, rh, col.cut, isCutRow);
+    for (let ci = 0; ci < colWidths.length; ci++) {
+      const col = colWidths[ci];
+      const piece = taperPieces ? taperPieces[ci] : null;
+      if (piece) {
+        const maxEdge = Math.max(piece.edgeLeft, piece.edgeRight);
+        if (maxEdge > 0.05) {
+          const pieceY = isBottomCutRow ? y : y + rh - maxEdge;
+          drawTaperedCell(ctx, dpr, scale, 'h', x, pieceY, col.width, maxEdge, piece.edgeLeft, piece.edgeRight, isTopCutRow);
+        }
+        // else: taper collapses to ~0 right here — nothing to draw for this piece.
+      } else {
+        drawTileCell(ctx, dpr, scale, x, y, col.width, rh, col.cut, isCutRow);
+      }
       x += col.width;
     }
     y += rh;
@@ -1007,7 +1102,7 @@ function drawTaperedCell(ctx, dpr, scale, axis, x, y, w, h, edgeA, edgeB, innerA
 // This is the "diminishing course" technique installers use to keep the
 // chosen reference side straight on an out-of-square wall.
 function drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeight) {
-  const { colTaper, rowTaper, rowsFull, colsFull, tileW, tileH } = layout;
+  const { heightTaperBottom, heightTaperTop, rowTaper, rowsFull, colsFull, tileW, tileH } = layout;
   const xOffset = (drawWidth - layout.wallWidth) / 2;
   const yOffset = (drawHeight - layout.wallHeight) / 2;
   const xFullLeft = xOffset + layout.edgeCutWStart;
@@ -1018,17 +1113,19 @@ function drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeigh
   const hasTopCut = layout.edgeCutHEnd > 0.05;
   const hasBottomCut = layout.edgeCutHStart > 0.05;
 
-  const colSlots = []; // {kind: 'left'|'full'|'right', taper}
-  let ci = 0;
-  if (hasLeftCut) colSlots.push({ kind: 'left', taper: colTaper[ci++] });
-  for (let i = 0; i < colsFull; i++) colSlots.push({ kind: 'full', taper: colTaper[ci++] });
-  if (hasRightCut) colSlots.push({ kind: 'right', taper: colTaper[ci++] });
+  // heightTaperBottom/heightTaperTop are piece lists built in the same
+  // left-cut/full.../right-cut order as colSlots here, so they line up by
+  // index directly — no separate lookup structure needed.
+  const colSlots = []; // {kind: 'left'|'full'|'right'}
+  for (let i = 0; i < (hasLeftCut ? 1 : 0); i++) colSlots.push({ kind: 'left' });
+  for (let i = 0; i < colsFull; i++) colSlots.push({ kind: 'full' });
+  for (let i = 0; i < (hasRightCut ? 1 : 0); i++) colSlots.push({ kind: 'right' });
 
   const rowSlots = []; // bottom-up: {kind: 'bottom'|'full'|'top', taper}
   let ri = 0;
-  if (hasBottomCut) rowSlots.push({ kind: 'bottom', taper: rowTaper[ri++] });
-  for (let i = 0; i < rowsFull; i++) rowSlots.push({ kind: 'full', taper: rowTaper[ri++] });
-  if (hasTopCut) rowSlots.push({ kind: 'top', taper: rowTaper[ri++] });
+  if (hasBottomCut) rowSlots.push({ kind: 'bottom', taper: rowTaper ? rowTaper[ri++] : null });
+  for (let i = 0; i < rowsFull; i++) rowSlots.push({ kind: 'full', taper: rowTaper ? rowTaper[ri++] : null });
+  if (hasTopCut) rowSlots.push({ kind: 'top', taper: rowTaper ? rowTaper[ri++] : null });
 
   const colX = new Array(colSlots.length);
   const colW = new Array(colSlots.length);
@@ -1061,42 +1158,41 @@ function drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeigh
       const isWidthCut = colSlot.kind !== 'full';
 
       if (!isHeightCut && !isWidthCut) {
-        // Plain full tile, no taper involved.
         drawTileCell(ctx, dpr, scale, colX[c], rowY[r], tileW, tileH, false, false);
         continue;
       }
 
       if (isHeightCut && !isWidthCut) {
-        // Top/bottom cut row, full-width column: sloped piece, edges from
-        // this column's own left/right taper.
-        const t = colSlot.taper;
-        const edgeA = rowSlot.kind === 'bottom' ? t.edgeCutHStartLeft : t.edgeCutHEndLeft;
-        const edgeB = rowSlot.kind === 'bottom' ? t.edgeCutHStartRight : t.edgeCutHEndRight;
-        const pieceY = rowSlot.kind === 'bottom' ? yFullTop + rowsFull * tileH : yFullTop - Math.max(edgeA, edgeB);
-        const pieceH = rowSlot.kind === 'bottom' ? Math.max(edgeA, edgeB) : Math.max(edgeA, edgeB);
+        // Top/bottom cut row, full-width column: sloped piece, edges come
+        // straight from this row's own piece list at this column's index.
+        const piece = (rowSlot.kind === 'bottom' ? heightTaperBottom : heightTaperTop)?.[c];
+        const edgeA = piece ? piece.edgeLeft : (rowSlot.kind === 'bottom' ? layout.edgeCutHStart : layout.edgeCutHEnd);
+        const edgeB = piece ? piece.edgeRight : edgeA;
         if (Math.max(edgeA, edgeB) <= 0.05) continue;
+        const pieceH = Math.max(edgeA, edgeB);
+        const pieceY = rowSlot.kind === 'bottom' ? yFullTop + rowsFull * tileH : yFullTop - pieceH;
         drawTaperedCell(ctx, dpr, scale, 'h', colX[c], pieceY, colW[c], pieceH, edgeA, edgeB, rowSlot.kind !== 'bottom');
       } else if (!isHeightCut && isWidthCut) {
         // Left/right cut column, full-height row: sloped piece, edges from
         // this row's own top/bottom taper.
         const t = rowSlot.taper;
-        const edgeA = colSlot.kind === 'left' ? t.edgeCutWStartTop : t.edgeCutWEndTop;
-        const edgeB = colSlot.kind === 'left' ? t.edgeCutWStartBottom : t.edgeCutWEndBottom;
+        const edgeA = t ? (colSlot.kind === 'left' ? t.edgeCutWStartTop : t.edgeCutWEndTop) : (colSlot.kind === 'left' ? layout.edgeCutWStart : layout.edgeCutWEnd);
+        const edgeB = t ? (colSlot.kind === 'left' ? t.edgeCutWStartBottom : t.edgeCutWEndBottom) : edgeA;
         const pieceMax = Math.max(edgeA, edgeB);
         if (pieceMax <= 0.05) continue;
         const pieceX = colSlot.kind === 'left' ? xFullLeft - pieceMax : xFullLeft + colsFull * tileW;
         drawTaperedCell(ctx, dpr, scale, 'w', pieceX, rowY[r], pieceMax, tileH, edgeA, edgeB, colSlot.kind === 'left');
       } else {
         // Corner: cut in both directions. Keep this one a simple rectangle
-        // (average-based) — a true double-sloped corner piece is a
-        // non-trivial shape, and corners are a small fraction of the job.
-        const ct = colSlot.taper, rt = rowSlot.taper;
-        const cellH = rowSlot.kind === 'bottom'
-          ? (ct ? (ct.edgeCutHStartLeft + ct.edgeCutHStartRight) / 2 : layout.edgeCutHStart)
-          : (ct ? (ct.edgeCutHEndLeft + ct.edgeCutHEndRight) / 2 : layout.edgeCutHEnd);
-        const cellW = colSlot.kind === 'left'
-          ? (rt ? (rt.edgeCutWStartTop + rt.edgeCutWStartBottom) / 2 : layout.edgeCutWStart)
-          : (rt ? (rt.edgeCutWEndTop + rt.edgeCutWEndBottom) / 2 : layout.edgeCutWEnd);
+        // (average of the adjacent tapers) — a true double-sloped corner
+        // piece is a non-trivial shape, and corners are a small fraction
+        // of the job.
+        const piece = (rowSlot.kind === 'bottom' ? heightTaperBottom : heightTaperTop)?.[c];
+        const t = rowSlot.taper;
+        const cellH = piece ? (piece.edgeLeft + piece.edgeRight) / 2 : (rowSlot.kind === 'bottom' ? layout.edgeCutHStart : layout.edgeCutHEnd);
+        const cellW = t
+          ? (colSlot.kind === 'left' ? (t.edgeCutWStartTop + t.edgeCutWStartBottom) / 2 : (t.edgeCutWEndTop + t.edgeCutWEndBottom) / 2)
+          : (colSlot.kind === 'left' ? layout.edgeCutWStart : layout.edgeCutWEnd);
         if (cellH <= 0.05 || cellW <= 0.05) continue;
         const cellX = colSlot.kind === 'left' ? xFullLeft - cellW : xFullLeft + colsFull * tileW;
         const cellY = rowSlot.kind === 'bottom' ? yFullTop + rowsFull * tileH : yFullTop - cellH;
@@ -1105,11 +1201,6 @@ function drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeigh
     }
   }
 }
-// Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
-// reference always follows vertAnchor. The vertical (side-wall) reference
-// follows horizAnchor for the straight pattern; offset patterns (brick/1-3)
-// keep measuring from the right wall, since the running pattern itself
-// dictates where the cut falls.
 // ---------- Installation start-point guide ----------
 // Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
 // reference always follows vertAnchor. The vertical (side-wall) reference
@@ -1121,7 +1212,7 @@ function buildInstallGuide(layout) {
     return `<p><strong>Linha central (45°):</strong> marque uma linha cruzando o espaço na diagonal, passando pelo centro. Comece a colocar os tiles a partir dela, alinhando os dois sentidos.</p>`;
   }
 
-  if (layout.colTaper) {
+  if ((layout.heightTaperBottom || layout.heightTaperTop)) {
     return `<p><strong>Espaço torto:</strong> comece pelas peças inteiras (marcadas "FULL" no desenho) — elas ficam todas no mesmo nível/prumo, começando do meio pra fora. Cada peça de corte nas bordas tem sua própria medida, mostrada diretamente nela no desenho acima — meça e corte peça por peça, não use uma medida única pra todas.</p>`;
   }
 
@@ -1189,7 +1280,7 @@ function nudge(dx, dy) {
   state.nudgeX += dx * step;
   state.nudgeY += dy * step;
   updateNudgeReadout();
-  runCalculation();
+  recalcAndDraw(); // instant — doesn't touch/re-spend the AI image
 }
 
 document.getElementById('nudgeLeft').addEventListener('click', () => nudge(-1, 0));
@@ -1200,7 +1291,7 @@ document.getElementById('nudgeReset').addEventListener('click', () => {
   state.nudgeX = 0;
   state.nudgeY = 0;
   updateNudgeReadout();
-  runCalculation();
+  recalcAndDraw();
 });
 updateNudgeReadout();
 
@@ -1221,15 +1312,14 @@ function applyNudge(edgeStart, edgeEnd, fullCount, unit, nudgeAmount) {
   return { edgeStart: Math.max(newStart, 0), edgeEnd: Math.max(newEnd, 0), fullCount: Math.max(newFull, 0) };
 }
 
-async function runCalculation() {
+// Recomputes and redraws the diagram, stats, and guide text synchronously
+// — everything except the AI image, which is left alone. Used for the
+// nudge buttons so pushing the layout feels instant, instead of also
+// waiting on (and re-spending) an AI image regeneration every tap.
+function recalcAndDraw() {
   const layout = computeLayout();
 
-  document.getElementById('loadingBox').style.display = 'flex';
-  document.getElementById('resultContent').style.display = 'none';
   document.getElementById('errorBox').style.display = 'none';
-  document.getElementById('resultSubtitle').textContent =
-    'Calculando a melhor distribuição dos tiles no seu espaço...';
-
   document.getElementById('statCols').textContent = layout.colsRange || layout.totalCols;
   document.getElementById('statRows').textContent = layout.totalRows;
   document.getElementById('statTiles').textContent = layout.totalTiles;
@@ -1242,18 +1332,25 @@ async function runCalculation() {
     ? 'Já reaproveita sobras: 2 cortes de um lado só que cabem juntos numa peça só contam como 1 peça comprada (cantos cortados dos 2 lados não entram nesse reaproveitamento).'
     : '*Estimativa com 15% de folga — padrão diamante tem sobras triangulares que não reaproveitam de forma confiável.';
   drawLayout(layout);
+  document.getElementById('recommendationNote').textContent = buildRecommendationNote(layout);
+  document.getElementById('installGuideContent').innerHTML = buildInstallGuide(layout);
+  document.getElementById('installGuideCard').style.display = 'block';
+  document.getElementById('resultContent').style.display = 'flex';
+  return layout;
+}
 
+function buildRecommendationNote(layout) {
   const orientationLabel = { horizontal: 'horizontal', vertical: 'vertical', diamond: 'diamante (45°)' }[layout.orientation];
   const patternLabel = { straight: 'reto', brick: 'amarração/brick', third: '1/3', thirdMirrored: '1/3 espelhado' }[layout.pattern];
 
   let note = `Orientação ${orientationLabel}, padrão ${patternLabel}. `;
   if (layout.diagonalMode) {
     note += `Em layout diamante, o cálculo já inclui cerca de 15% de material extra pra cobrir os cortes triangulares nas bordas — é uma estimativa; confirme o valor exato com quem for instalar.`;
-  } else if (layout.colTaper) {
-    // Crooked space + straight pattern: cuts are no longer one uniform
-    // number — they're computed individually per column/row so the full
-    // tiles stay level even though the wall itself tapers. Say so plainly
-    // instead of reporting a single misleading "equal cuts" number.
+  } else if ((layout.heightTaperBottom || layout.heightTaperTop)) {
+    // Crooked space: cuts are no longer one uniform number — they're
+    // computed individually per column/row so the full tiles stay level
+    // even though the wall itself tapers. Say so plainly instead of
+    // reporting a single misleading "equal cuts" number.
     note += `O espaço é torto, então os cortes nas bordas não são todos iguais — cada peça de corte tem o tamanho exato calculado pra compensar a inclinação real da parede, mostrado peça por peça no desenho abaixo. As peças inteiras ficam todas no mesmo nível.`;
   } else if (layout.pattern === 'straight') {
     if (!layout.hasVerticalCut && !layout.hasHorizontalCut) {
@@ -1289,13 +1386,37 @@ async function runCalculation() {
   if (layout.thinSliverWarning) {
     note += ` ⚠️ Mesmo puxando um tile a menos, não foi possível manter todos os cortes acima de ${MIN_CUT_IN}" — o espaço é pequeno demais em relação ao tamanho do tile escolhido. Considere um tile menor.`;
   }
-  if (state.crooked && !layout.colTaper && (layout.heightVariation > 0.4 || layout.widthVariation > 0.4)) {
+  if (state.crooked && !(layout.heightTaperBottom || layout.heightTaperTop) && (layout.heightVariation > 0.4 || layout.widthVariation > 0.4)) {
     const parts = [];
     if (layout.widthVariation > 0.4) parts.push(`a largura varia ${formatInches(layout.widthVariation)} entre o topo e a base`);
     if (layout.heightVariation > 0.4) parts.push(`a altura varia ${formatInches(layout.heightVariation)} entre a esquerda e a direita`);
     note += ` ${parts.join(', e ')}. Use nível a laser, comece a primeira fileira nivelada a partir do lado mais reto, e ajuste os cortes das bordas individualmente conforme a inclinação real.`;
   }
-  document.getElementById('recommendationNote').textContent = note;
+  return note;
+}
+
+async function runCalculation() {
+  const layout = computeLayout();
+
+  document.getElementById('loadingBox').style.display = 'flex';
+  document.getElementById('resultContent').style.display = 'none';
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('resultSubtitle').textContent =
+    'Calculando a melhor distribuição dos tiles no seu espaço...';
+
+  document.getElementById('statCols').textContent = layout.colsRange || layout.totalCols;
+  document.getElementById('statRows').textContent = layout.totalRows;
+  document.getElementById('statTiles').textContent = layout.totalTiles;
+
+  const materialStats = computeMaterialStats(layout);
+  document.getElementById('statSqft').textContent = materialStats.sqft.toFixed(1);
+  document.getElementById('statBuyTiles').textContent = materialStats.buyTiles
+    + (materialStats.optimized ? '' : '*');
+  document.getElementById('buyTilesNote').textContent = materialStats.optimized
+    ? 'Já reaproveita sobras: 2 cortes de um lado só que cabem juntos numa peça só contam como 1 peça comprada (cantos cortados dos 2 lados não entram nesse reaproveitamento).'
+    : '*Estimativa com 15% de folga — padrão diamante tem sobras triangulares que não reaproveitam de forma confiável.';
+  drawLayout(layout);
+  document.getElementById('recommendationNote').textContent = buildRecommendationNote(layout);
 
   document.getElementById('installGuideContent').innerHTML = buildInstallGuide(layout);
   document.getElementById('installGuideCard').style.display = 'block';
