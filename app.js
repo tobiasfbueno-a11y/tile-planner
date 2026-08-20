@@ -1,5 +1,5 @@
 // ---------- Version (bump this on every update — compare with what's on screen) ----------
-const APP_VERSION = 'v30';
+const APP_VERSION = 'v31';
 document.getElementById('appVersion').textContent = APP_VERSION;
 
 // ---------- Whole-inches + fraction measurement fields ----------
@@ -358,6 +358,7 @@ function computeLayout() {
 
   let colsFull, remW, edgeCutWStart, edgeCutWEnd, hasVerticalCut, totalCols, totalTiles, colsRange = null;
   let horizRedistributed = false;
+  let colTaper = null, rowTaper = null;
 
   if (pattern === 'straight' || diagonalMode) {
     // horizAnchor: 'left'/'right' flush a full tile against that wall; the
@@ -372,6 +373,58 @@ function computeLayout() {
     horizRedistributed = !!colSplit.redistributed;
     totalCols = colsFull + (edgeCutWStart > 0.05 ? 1 : 0) + (edgeCutWEnd > 0.05 ? 1 : 0);
     totalTiles = Math.ceil(totalCols * totalRows * diagonalWaste);
+
+    // Crooked space + straight pattern: the wall isn't actually one uniform
+    // height/width — it tapers between the two measured sides. Using one
+    // averaged cut everywhere means the "main" edge you chose to keep flush
+    // won't really be flush at every column. The fix is the standard
+    // diminishing-course technique: keep the same number of FULL tile rows
+    // everywhere (so courses stay level), but let the CUT piece at each
+    // column/row take its own real size, computed from the actual local
+    // wall height/width at that position — not the average.
+    if (state.crooked && sides && !diagonalMode) {
+      const colsForTaper = [];
+      let cx = 0;
+      if (edgeCutWStart > 0.05) { colsForTaper.push({ x: cx, w: edgeCutWStart }); cx += edgeCutWStart; }
+      for (let i = 0; i < colsFull; i++) { colsForTaper.push({ x: cx, w: tileW }); cx += tileW; }
+      if (edgeCutWEnd > 0.05) { colsForTaper.push({ x: cx, w: edgeCutWEnd }); cx += edgeCutWEnd; }
+
+      colTaper = colsForTaper.map(c => {
+        const xFrac = wallWidth > 0 ? (c.x + c.w / 2) / wallWidth : 0.5;
+        const localHeight = sides.left + (sides.right - sides.left) * xFrac;
+        const localRem = +(localHeight - rowsFull * effH).toFixed(3);
+        if (vertAnchorNorm === 'center') {
+          const e = +(localRem / 2).toFixed(3);
+          return { x: c.x, w: c.w, edgeCutHStart: Math.max(e, 0), edgeCutHEnd: Math.max(e, 0), localHeight };
+        }
+        return {
+          x: c.x, w: c.w, localHeight,
+          edgeCutHStart: vertAnchorNorm === 'end' ? Math.max(localRem, 0) : 0,
+          edgeCutHEnd: vertAnchorNorm === 'start' ? Math.max(localRem, 0) : 0,
+        };
+      });
+
+      const rowsForTaper = [];
+      let cy = 0;
+      if (edgeCutHStart > 0.05) { rowsForTaper.push({ y: cy, h: edgeCutHStart }); cy += edgeCutHStart; }
+      for (let i = 0; i < rowsFull; i++) { rowsForTaper.push({ y: cy, h: tileH }); cy += tileH; }
+      if (edgeCutHEnd > 0.05) { rowsForTaper.push({ y: cy, h: edgeCutHEnd }); cy += edgeCutHEnd; }
+
+      rowTaper = rowsForTaper.map(r => {
+        const yFrac = wallHeight > 0 ? (r.y + r.h / 2) / wallHeight : 0.5;
+        const localWidth = sides.top + (sides.bottom - sides.top) * yFrac;
+        const localRem = +(localWidth - colsFull * effW).toFixed(3);
+        if (horizAnchorNorm === 'center') {
+          const e = +(localRem / 2).toFixed(3);
+          return { y: r.y, h: r.h, edgeCutWStart: Math.max(e, 0), edgeCutWEnd: Math.max(e, 0), localWidth };
+        }
+        return {
+          y: r.y, h: r.h, localWidth,
+          edgeCutWStart: horizAnchorNorm === 'end' ? Math.max(localRem, 0) : 0,
+          edgeCutWEnd: horizAnchorNorm === 'start' ? Math.max(localRem, 0) : 0,
+        };
+      });
+    }
   } else {
     // Running-bond style patterns: each row is offset horizontally, so the
     // cut pieces land in different spots row to row — the pattern itself
@@ -406,7 +459,7 @@ function computeLayout() {
     rowsFull, remH, edgeCutHStart, edgeCutHEnd, hasHorizontalCut,
     totalCols, totalRows, totalTiles,
     thinSliverWarning, sides, widthVariation, heightVariation,
-    vertRedistributed, horizRedistributed,
+    vertRedistributed, horizRedistributed, colTaper, rowTaper,
     effW, effH,
   };
 }
@@ -627,6 +680,77 @@ function drawDimensionMark(ctx, dpr, x1, y1, x2, y2, label, orientation, spanPx,
   ctx.restore();
 }
 
+// Draws one tile cell (fill + stroke + either a dimension mark for a cut
+// piece or a "FULL" label for an uncut one). Shared by the normal grid
+// renderer and the tapered/crooked-space renderer so both stay consistent.
+function drawTileCell(ctx, dpr, scale, xIn, yIn, wIn, hIn, isWidthCut, isHeightCut) {
+  const cellX = xIn * scale, cellY = yIn * scale;
+  const cellW = wIn * scale, cellH = hIn * scale;
+  const isCut = isWidthCut || isHeightCut;
+
+  ctx.fillStyle = isCut ? 'rgba(90,171,168,0.55)' : 'rgba(62,124,122,0.35)';
+  ctx.fillRect(cellX, cellY, cellW, cellH);
+  ctx.strokeStyle = '#EDEAE4';
+  ctx.lineWidth = dpr;
+  ctx.strokeRect(cellX, cellY, cellW, cellH);
+
+  if (!isCut) {
+    if (cellW > 30 * dpr && cellH > 16 * dpr) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(243,233,222,0.55)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.beginPath();
+      ctx.rect(cellX, cellY, cellW, cellH);
+      ctx.clip();
+      ctx.translate(cellX + cellW / 2, cellY + cellH / 2);
+      let fontSize = Math.max(8 * dpr, Math.min(cellW, cellH) * 0.16);
+      ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
+      const w = ctx.measureText('FULL').width;
+      const maxTextW = cellW - 8 * dpr;
+      if (w > maxTextW) fontSize *= maxTextW / w;
+      fontSize = Math.max(fontSize, 6 * dpr);
+      ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
+      ctx.fillText('FULL', 0, 0);
+      ctx.restore();
+    }
+    return;
+  }
+
+  const margin = Math.min(cellW, cellH) * 0.18;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cellX, cellY, cellW, cellH);
+  ctx.clip();
+
+  if (isWidthCut && isHeightCut) {
+    const m = Math.min(cellW, cellH) * 0.16;
+    if (cellW > 18 * dpr && cellH > 14 * dpr) {
+      drawDimensionMark(ctx, dpr,
+        cellX + m, cellY + cellH - m, cellX + cellW - m, cellY + cellH - m,
+        `${wIn.toFixed(1)}"`, 'horizontal', cellW - m * 2, 0.85);
+    }
+    if (cellH > 18 * dpr && cellW > 14 * dpr) {
+      drawDimensionMark(ctx, dpr,
+        cellX + cellW - m, cellY + m, cellX + cellW - m, cellY + cellH - m,
+        `${hIn.toFixed(1)}"`, 'vertical', cellH - m * 2, 0.85);
+    }
+  } else if (isHeightCut) {
+    if (cellH > 16 * dpr && cellW > 8 * dpr) {
+      drawDimensionMark(ctx, dpr,
+        cellX + cellW / 2, cellY + margin, cellX + cellW / 2, cellY + cellH - margin,
+        `${hIn.toFixed(1)}"`, 'vertical', cellH - margin * 2);
+    }
+  } else {
+    if (cellW > 16 * dpr && cellH > 8 * dpr) {
+      drawDimensionMark(ctx, dpr,
+        cellX + margin, cellY + cellH / 2, cellX + cellW - margin, cellY + cellH / 2,
+        `${wIn.toFixed(1)}"`, 'horizontal', cellW - margin * 2);
+    }
+  }
+  ctx.restore();
+}
+
 function drawLayout(layout) {
   const canvas = document.getElementById('layoutCanvas');
   const dpr = window.devicePixelRatio || 1;
@@ -637,13 +761,18 @@ function drawLayout(layout) {
   // exactly where the corner detail matters most.
   const displayWidth = canvas.parentElement.clientWidth || Math.min(window.innerWidth - 48, 480);
   const padding = 34; // extra room for the width/height labels along the edges
-  const scale = Math.max((displayWidth - padding * 2) / layout.wallWidth, 2) * dpr;
+  // With a tapered (crooked-space) layout, some columns/rows are taller or
+  // wider than the average — size the canvas to the tallest/widest local
+  // measurement so nothing gets clipped off.
+  const drawWidth = layout.rowTaper ? Math.max(layout.wallWidth, ...layout.rowTaper.map(r => r.localWidth)) : layout.wallWidth;
+  const drawHeight = layout.colTaper ? Math.max(layout.wallHeight, ...layout.colTaper.map(c => c.localHeight)) : layout.wallHeight;
+  const scale = Math.max((displayWidth - padding * 2) / drawWidth, 2) * dpr;
   const pad = padding * dpr;
   // The wall itself is always the real rectangle — diamond mode never
   // rotates the wall, only the tile grid inside it. So canvas size always
   // matches the true wallWidth × wallHeight, never an expanded diagonal box.
-  canvas.width = layout.wallWidth * scale + pad * 2;
-  canvas.height = layout.wallHeight * scale + pad * 2;
+  canvas.width = drawWidth * scale + pad * 2;
+  canvas.height = drawHeight * scale + pad * 2;
   canvas.style.width = displayWidth + 'px';
   canvas.style.height = (canvas.height / dpr) + 'px';
   const ctx = canvas.getContext('2d');
@@ -658,7 +787,7 @@ function drawLayout(layout) {
   // by this clip into the natural triangular/pentagon corner shapes,
   // instead of the wall boundary itself appearing as a rotated diamond.
   ctx.beginPath();
-  ctx.rect(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2, layout.wallWidth * scale, layout.wallHeight * scale);
+  ctx.rect(-drawWidth * scale / 2, -drawHeight * scale / 2, drawWidth * scale, drawHeight * scale);
   ctx.clip();
 
   if (layout.diagonalMode) {
@@ -689,7 +818,14 @@ function drawLayout(layout) {
     return;
   }
 
-  ctx.translate(-layout.wallWidth * scale / 2, -layout.wallHeight * scale / 2);
+  ctx.translate(-drawWidth * scale / 2, -drawHeight * scale / 2);
+
+  if (layout.colTaper && layout.pattern === 'straight') {
+    drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeight);
+    ctx.restore();
+    drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad);
+    return;
+  }
 
   // Build rows bottom-to-top. Every row — cut or full — is a real course in
   // the running-bond sequence and gets its own sequential courseIdx, so the
@@ -721,86 +857,7 @@ function drawLayout(layout) {
 
     let x = 0;
     for (const col of colWidths) {
-      const isCut = isCutRow || col.cut;
-      ctx.fillStyle = isCut ? 'rgba(90,171,168,0.55)' : 'rgba(62,124,122,0.35)';
-      ctx.fillRect(x * scale, y * scale, col.width * scale, rh * scale);
-      ctx.strokeStyle = '#EDEAE4';
-      ctx.lineWidth = dpr; // ~1 CSS pixel, crisp regardless of screen density
-      ctx.strokeRect(x * scale, y * scale, col.width * scale, rh * scale);
-
-      // Mark the exact cut size with a proper dimension line — a straight
-      // line with small perpendicular tick marks at each end (|———|), the
-      // way an installer would actually read a technical drawing — instead
-      // of just a number floating in the middle of the piece.
-      if (isCut) {
-        const cellW = col.width * scale;
-        const cellH = rh * scale;
-        const isCorner = isCutRow && col.cut;
-        const cellX = x * scale, cellY = y * scale;
-        const margin = Math.min(cellW, cellH) * 0.18;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(cellX, cellY, cellW, cellH);
-        ctx.clip();
-
-        if (isCorner) {
-          // Cut in both directions: push each dimension line to hug a
-          // different edge of the cell (bottom edge for width, right edge
-          // for height) so they meet near the corner without crossing
-          // through the middle and colliding with each other.
-          const m = Math.min(cellW, cellH) * 0.16;
-          if (cellW > 30 * dpr && cellH > 20 * dpr) {
-            drawDimensionMark(ctx, dpr,
-              cellX + m, cellY + cellH - m, cellX + cellW - m, cellY + cellH - m,
-              `${col.width.toFixed(1)}"`, 'horizontal', cellW - m * 2, 0.85);
-          }
-          if (cellH > 30 * dpr && cellW > 20 * dpr) {
-            drawDimensionMark(ctx, dpr,
-              cellX + cellW - m, cellY + m, cellX + cellW - m, cellY + cellH - m,
-              `${rh.toFixed(1)}"`, 'vertical', cellH - m * 2, 0.85);
-          }
-        } else if (isCutRow) {
-          // Height-cut, full width: vertical tick-line.
-          if (cellH > 26 * dpr && cellW > 14 * dpr) {
-            drawDimensionMark(ctx, dpr,
-              cellX + cellW / 2, cellY + margin, cellX + cellW / 2, cellY + cellH - margin,
-              `${rh.toFixed(1)}"`, 'vertical', cellH - margin * 2);
-          }
-        } else {
-          // Width-cut, full height: horizontal tick-line.
-          if (cellW > 26 * dpr && cellH > 14 * dpr) {
-            drawDimensionMark(ctx, dpr,
-              cellX + margin, cellY + cellH / 2, cellX + cellW - margin, cellY + cellH / 2,
-              `${col.width.toFixed(1)}"`, 'horizontal', cellW - margin * 2);
-          }
-        }
-        ctx.restore();
-      } else {
-        // Full, uncut tile — label it "FULL" so it's unmistakable at a
-        // glance which pieces need zero cutting.
-        const cellW = col.width * scale;
-        const cellH = rh * scale;
-        if (cellW > 30 * dpr && cellH > 16 * dpr) {
-          ctx.save();
-          ctx.fillStyle = 'rgba(243,233,222,0.55)';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.beginPath();
-          ctx.rect(x * scale, y * scale, cellW, cellH);
-          ctx.clip();
-          ctx.translate(x * scale + cellW / 2, y * scale + cellH / 2);
-          let fontSize = Math.max(8 * dpr, Math.min(cellW, cellH) * 0.16);
-          ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
-          const w = ctx.measureText('FULL').width;
-          const maxTextW = cellW - 8 * dpr;
-          if (w > maxTextW) fontSize *= maxTextW / w;
-          fontSize = Math.max(fontSize, 6 * dpr);
-          ctx.font = `600 ${fontSize}px 'JetBrains Mono', monospace`;
-          ctx.fillText('FULL', 0, 0);
-          ctx.restore();
-        }
-      }
+      drawTileCell(ctx, dpr, scale, x, y, col.width, rh, col.cut, isCutRow);
       x += col.width;
     }
     y += rh;
@@ -808,6 +865,101 @@ function drawLayout(layout) {
 
   ctx.restore();
   drawSpaceDimensionLabels(ctx, layout, scale, dpr, pad);
+}
+
+// Renders a crooked-space + straight-pattern layout, where the wall's real
+// height/width tapers between the two measured sides on each axis. The
+// full-tile block sits at one FIXED position (same for every column/row —
+// that's what keeps the courses level), while each edge cut piece takes on
+// its own real size at that specific column/row, computed in computeLayout
+// as colTaper/rowTaper. This is the "diminishing course" technique
+// installers use to keep the chosen reference side straight on an
+// out-of-square wall.
+function drawTaperedStraightLayout(ctx, layout, scale, dpr, drawWidth, drawHeight) {
+  const { colTaper, rowTaper, rowsFull, colsFull, tileW, tileH } = layout;
+  const xOffset = (drawWidth - layout.wallWidth) / 2;
+  const yOffset = (drawHeight - layout.wallHeight) / 2;
+  const xFullLeft = xOffset + layout.edgeCutWStart;
+  const yFullTop = yOffset + layout.edgeCutHEnd;
+
+  const hasLeftCut = layout.edgeCutWStart > 0.05;
+  const hasRightCut = layout.edgeCutWEnd > 0.05;
+  const hasTopCut = layout.edgeCutHEnd > 0.05;
+  const hasBottomCut = layout.edgeCutHStart > 0.05;
+
+  // colTaper/rowTaper are ordered [leftOrBottomCut?, ...full, rightOrTopCut?]
+  // matching how they were built in computeLayout — map that directly to
+  // slot indices here so full/cut cells line up with the right taper entry.
+  const colSlots = []; // {kind: 'left'|'full'|'right', taper}
+  let ci = 0;
+  if (hasLeftCut) colSlots.push({ kind: 'left', taper: colTaper[ci++] });
+  for (let i = 0; i < colsFull; i++) colSlots.push({ kind: 'full', taper: colTaper[ci++] });
+  if (hasRightCut) colSlots.push({ kind: 'right', taper: colTaper[ci++] });
+
+  const rowSlots = []; // bottom-up: {kind: 'bottom'|'full'|'top', taper}
+  let ri = 0;
+  if (hasBottomCut) rowSlots.push({ kind: 'bottom', taper: rowTaper[ri++] });
+  for (let i = 0; i < rowsFull; i++) rowSlots.push({ kind: 'full', taper: rowTaper[ri++] });
+  if (hasTopCut) rowSlots.push({ kind: 'top', taper: rowTaper[ri++] });
+
+  // x positions for full columns are fixed left-to-right from xFullLeft.
+  const colX = new Array(colSlots.length);
+  const colW = new Array(colSlots.length);
+  let xc = xFullLeft;
+  for (let c = 0; c < colSlots.length; c++) {
+    if (colSlots[c].kind === 'full') { colX[c] = xc; colW[c] = tileW; xc += tileW; }
+  }
+  const leftIdx = colSlots.findIndex(s => s.kind === 'left');
+  if (leftIdx >= 0) { colX[leftIdx] = xFullLeft - layout.edgeCutWStart; colW[leftIdx] = layout.edgeCutWStart; }
+  const rightIdx = colSlots.findIndex(s => s.kind === 'right');
+  if (rightIdx >= 0) { colX[rightIdx] = xFullLeft + colsFull * tileW; colW[rightIdx] = layout.edgeCutWEnd; }
+
+  // y positions for full rows are fixed, stacked from yFullTop downward.
+  const rowY = new Array(rowSlots.length);
+  const rowH = new Array(rowSlots.length);
+  let yc = yFullTop;
+  for (let r = rowSlots.length - 1; r >= 0; r--) {
+    if (rowSlots[r].kind === 'full') { rowY[r] = yc; rowH[r] = tileH; yc += tileH; }
+  }
+  const bottomIdx = rowSlots.findIndex(s => s.kind === 'bottom');
+  if (bottomIdx >= 0) { rowY[bottomIdx] = yFullTop + rowsFull * tileH; rowH[bottomIdx] = layout.edgeCutHStart; }
+  const topIdx = rowSlots.findIndex(s => s.kind === 'top');
+  if (topIdx >= 0) { rowY[topIdx] = yFullTop - layout.edgeCutHEnd; rowH[topIdx] = layout.edgeCutHEnd; }
+
+  // Draw top-to-bottom (reverse of the bottom-up rowSlots order).
+  for (let r = rowSlots.length - 1; r >= 0; r--) {
+    const rowSlot = rowSlots[r];
+    for (let c = 0; c < colSlots.length; c++) {
+      const colSlot = colSlots[c];
+      const isHeightCut = rowSlot.kind !== 'full';
+      const isWidthCut = colSlot.kind !== 'full';
+
+      let cellX, cellW;
+      if (colSlot.kind === 'full') { cellX = colX[c]; cellW = colW[c]; }
+      else {
+        // Cut column: width comes from THIS row's own taper (varies per row).
+        const w = colSlot.kind === 'left'
+          ? (rowSlot.taper ? rowSlot.taper.edgeCutWStart : layout.edgeCutWStart)
+          : (rowSlot.taper ? rowSlot.taper.edgeCutWEnd : layout.edgeCutWEnd);
+        cellW = w;
+        cellX = colSlot.kind === 'left' ? xFullLeft - w : xFullLeft + colsFull * tileW;
+      }
+
+      let cellY, cellH;
+      if (rowSlot.kind === 'full') { cellY = rowY[r]; cellH = rowH[r]; }
+      else {
+        // Cut row: height comes from THIS column's own taper (varies per column).
+        const h = rowSlot.kind === 'bottom'
+          ? (colSlot.taper ? colSlot.taper.edgeCutHStart : layout.edgeCutHStart)
+          : (colSlot.taper ? colSlot.taper.edgeCutHEnd : layout.edgeCutHEnd);
+        cellH = h;
+        cellY = rowSlot.kind === 'bottom' ? yFullTop + rowsFull * tileH : yFullTop - h;
+      }
+
+      if (cellW <= 0.05 || cellH <= 0.05) continue; // nothing to draw at this intersection
+      drawTileCell(ctx, dpr, scale, cellX, cellY, cellW, cellH, isWidthCut, isHeightCut);
+    }
+  }
 }
 // Plain, no-decisions-required instructions. The horizontal (floor/ceiling)
 // reference always follows vertAnchor. The vertical (side-wall) reference
@@ -823,6 +975,10 @@ function drawLayout(layout) {
 function buildInstallGuide(layout) {
   if (layout.diagonalMode) {
     return `<p><strong>Linha central (45°):</strong> marque uma linha cruzando o espaço na diagonal, passando pelo centro. Comece a colocar os tiles a partir dela, alinhando os dois sentidos.</p>`;
+  }
+
+  if (layout.colTaper) {
+    return `<p><strong>Espaço torto:</strong> comece pelas peças inteiras (marcadas "FULL" no desenho) — elas ficam todas no mesmo nível/prumo, começando do meio pra fora. Cada peça de corte nas bordas tem sua própria medida, mostrada diretamente nela no desenho acima — meça e corte peça por peça, não use uma medida única pra todas.</p>`;
   }
 
   let html;
@@ -901,6 +1057,12 @@ async function runCalculation() {
   let note = `Orientação ${orientationLabel}, padrão ${patternLabel}. `;
   if (layout.diagonalMode) {
     note += `Em layout diamante, o cálculo já inclui cerca de 15% de material extra pra cobrir os cortes triangulares nas bordas — é uma estimativa; confirme o valor exato com quem for instalar.`;
+  } else if (layout.colTaper) {
+    // Crooked space + straight pattern: cuts are no longer one uniform
+    // number — they're computed individually per column/row so the full
+    // tiles stay level even though the wall itself tapers. Say so plainly
+    // instead of reporting a single misleading "equal cuts" number.
+    note += `O espaço é torto, então os cortes nas bordas não são todos iguais — cada peça de corte tem o tamanho exato calculado pra compensar a inclinação real da parede, mostrado peça por peça no desenho abaixo. As peças inteiras ficam todas no mesmo nível.`;
   } else if (layout.pattern === 'straight') {
     if (!layout.hasVerticalCut && !layout.hasHorizontalCut) {
       note += `Os tiles encaixam perfeitamente na largura e altura do espaço, sem cortes.`;
@@ -926,7 +1088,7 @@ async function runCalculation() {
   if (layout.thinSliverWarning) {
     note += ` ⚠️ Mesmo puxando um tile a menos, não foi possível manter todos os cortes acima de ${MIN_CUT_IN}" — o espaço é pequeno demais em relação ao tamanho do tile escolhido. Considere um tile menor.`;
   }
-  if (state.crooked && (layout.heightVariation > 0.4 || layout.widthVariation > 0.4)) {
+  if (state.crooked && !layout.colTaper && (layout.heightVariation > 0.4 || layout.widthVariation > 0.4)) {
     const parts = [];
     if (layout.widthVariation > 0.4) parts.push(`a largura varia ${layout.widthVariation.toFixed(2)}" entre o topo e a base`);
     if (layout.heightVariation > 0.4) parts.push(`a altura varia ${layout.heightVariation.toFixed(2)}" entre a esquerda e a direita`);
